@@ -1,0 +1,26 @@
+application.version: TESTING
+
+komga:
+  database:
+    type: postgresql
+    url: jdbc:postgresql://localhost:5433/komga_test
+    username: postgres
+    password: postgres
+  tasks-db:
+    file: /tmp/tasks-test.sqlite
+    journal-mode: WAL
+
+spring:
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/{vendor}
+    mixed: true
+    placeholders:
+      library-file-hashing: true
+      library-scan-startup: false
+      delete-empty-collections: true
+      delete-empty-read-lists: true
+
+logging:
+  level:
+    org.gotson.komga: DEBUG

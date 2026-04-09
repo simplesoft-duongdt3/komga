@@ -55,6 +55,8 @@ dependencies {
   kapt("org.springframework.boot:spring-boot-configuration-processor:${libs.versions.springboot.get()}")
 
   implementation("org.flywaydb:flyway-core")
+  implementation("org.flywaydb:flyway-database-postgresql")
+  implementation("org.postgresql:postgresql")
 
   api("io.github.oshai:kotlin-logging-jvm:7.0.7")
 
@@ -105,7 +107,9 @@ dependencies {
   implementation("com.github.ben-manes.caffeine:caffeine")
 
   implementation("org.xerial:sqlite-jdbc:${libs.versions.sqliteJdbc.get()}")
+  implementation("org.postgresql:postgresql:${libs.versions.postgresql.get()}")
   jooqGenerator("org.xerial:sqlite-jdbc:${libs.versions.sqliteJdbc.get()}")
+  jooqGenerator("org.postgresql:postgresql:${libs.versions.postgresql.get()}")
 
   if (version.toString().endsWith(".0.0")) {
     ksp("com.github.gotson.bestbefore:bestbefore-processor-kotlin:0.2.0")
@@ -120,6 +124,10 @@ dependencies {
   testImplementation("com.google.jimfs:jimfs:1.3.1")
 
   testImplementation("com.tngtech.archunit:archunit-junit5:1.4.1")
+
+  testImplementation("org.testcontainers:testcontainers:1.20.4")
+  testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+  testImplementation("org.testcontainers:postgresql:1.20.4")
 
   benchmarkImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
   benchmarkImplementation("org.openjdk.jmh:jmh-core:1.37")
@@ -249,6 +257,10 @@ val sqliteUrls =
     "main" to "jdbc:sqlite:${project.layout.buildDirectory.get()}/generated/flyway/main/database.sqlite",
     "tasks" to "jdbc:sqlite:${project.layout.buildDirectory.get()}/generated/flyway/tasks/tasks.sqlite",
   )
+val postgresUrls =
+  mapOf(
+    "main" to "jdbc:postgresql://localhost:5433/komga",
+  )
 val sqliteMigrationDirs =
   mapOf(
     "main" to
@@ -260,6 +272,14 @@ val sqliteMigrationDirs =
       listOf(
         "$projectDir/src/flyway/resources/tasks/migration/sqlite",
 //    "$projectDir/src/flyway/kotlin/tasks/migration/sqlite",
+      ),
+  )
+val postgresMigrationDirs =
+  mapOf(
+    "main" to
+      listOf(
+        "$projectDir/src/flyway/resources/db/migration/postgresql",
+        "$projectDir/src/flyway/kotlin/db/migration/postgresql",
       ),
   )
 
@@ -300,6 +320,28 @@ tasks.register("flywayMigrateTasks", FlywayMigrateTask::class) {
   mixed = true
 }
 
+tasks.register("flywayMigrateMainPostgres", FlywayMigrateTask::class) {
+  val id = "main"
+  url = postgresUrls[id]
+  locations = arrayOf("classpath:db/migration/postgresql")
+  placeholders =
+    mapOf(
+      "library-file-hashing" to "true",
+      "library-scan-startup" to "false",
+      "delete-empty-collections" to "true",
+      "delete-empty-read-lists" to "true",
+    )
+  // in order to include the Java migrations, flywayClasses must be run before flywayMigrate
+  dependsOn("flywayClasses")
+  postgresMigrationDirs[id]?.forEach { inputs.dir(it) }
+  outputs.dir("${project.layout.buildDirectory.get()}/generated/flyway/$id-postgres")
+  doFirst {
+    // Note: We don't create/delete PostgreSQL database here, it should already exist
+    println("Migrating PostgreSQL database at ${postgresUrls[id]}")
+  }
+  mixed = true
+}
+
 buildscript {
   configurations["classpath"].resolutionStrategy.eachDependency {
     if (requested.group.startsWith("org.jooq") && requested.name.startsWith("jooq")) {
@@ -324,6 +366,28 @@ jooq {
           }
           target.apply {
             packageName = "org.gotson.komga.jooq.main"
+          }
+        }
+      }
+    }
+    create("mainPostgres") {
+      jooqConfiguration.apply {
+        logging = org.jooq.meta.jaxb.Logging.WARN
+        jdbc.apply {
+          driver = "org.postgresql.Driver"
+          url = postgresUrls["main"]
+           user = "komga"
+          password = "komga123"
+        }
+        generator.apply {
+          database.apply {
+            name = "org.jooq.meta.postgres.PostgresDatabase"
+            includes = ".*"
+            excludes = ""
+          }
+          target.apply {
+            packageName = "org.gotson.komga.jooq.main.postgres"
+            directory = "build/generated-src/jooq/main-postgres"
           }
         }
       }

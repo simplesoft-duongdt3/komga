@@ -1,0 +1,44 @@
+FROM eclipse-temurin:21-jdk AS build
+
+WORKDIR /app
+
+# Install Node.js 18 (matching .nvmrc)
+RUN apt-get update && \
+    apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+
+# Copy gradle files
+COPY gradle ./gradle
+COPY gradlew ./
+COPY gradle.properties ./
+COPY settings.gradle ./
+COPY build.gradle.kts ./
+
+# Copy all subproject sources (komga, komga-tray, komga-webui)
+COPY komga ./komga
+COPY komga-tray ./komga-tray
+COPY komga-webui ./komga-webui
+
+# Build the application - same as release.yml step
+# Gradle's prepareThymeLeaf handles: npmInstall -> npmBuild -> copyWebDist -> prepareThymeLeaf
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN ./gradlew :komga:prepareThymeLeaf :komga:bootJar -x test -x generateGitProperties
+
+# Runtime stage
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# Copy built artifact from build stage
+COPY --from=build /app/komga/build/libs/komga-*.jar komga.jar
+
+# Create non-root user
+RUN addgroup -S komga && adduser -S komga -G komga
+USER komga
+
+EXPOSE 25600
+
+ENTRYPOINT ["java", "-Dspring.profiles.include=docker", "--enable-native-access=ALL-UNNAMED", "-jar", "komga.jar"]

@@ -2,9 +2,8 @@ package org.gotson.komga.infrastructure.jooq.main
 
 import org.gotson.komga.domain.model.Author
 import org.gotson.komga.domain.persistence.ReferentialRepository
-import org.gotson.komga.infrastructure.datasource.SqliteUdfDataSource
+import org.gotson.komga.infrastructure.jooq.JooqUdfHelper
 import org.gotson.komga.infrastructure.jooq.SplitDslDaoBase
-import org.gotson.komga.infrastructure.jooq.udfStripAccents
 import org.gotson.komga.jooq.main.Tables
 import org.gotson.komga.jooq.main.tables.records.BookMetadataAggregationAuthorRecord
 import org.gotson.komga.jooq.main.tables.records.BookMetadataAuthorRecord
@@ -25,6 +24,7 @@ import java.time.LocalDate
 class ReferentialDao(
   dslRW: DSLContext,
   @Qualifier("dslContextRO") dslRO: DSLContext,
+  private val jooqUdfHelper: JooqUdfHelper,
 ) : SplitDslDaoBase(dslRW, dslRO),
   ReferentialRepository {
   private val a = Tables.BOOK_METADATA_AUTHOR
@@ -49,9 +49,9 @@ class ReferentialDao(
       .selectDistinct(a.NAME, a.ROLE)
       .from(a)
       .apply { filterOnLibraryIds?.let { leftJoin(b).on(a.BOOK_ID.eq(b.ID)) } }
-      .where(a.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents()))
+      .where(jooqUdfHelper.run { jooqUdfHelper.run { a.NAME.udfStripAccents() } }.containsIgnoreCase(search.stripAccents()))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
-      .orderBy(a.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { a.NAME.collateUnicode3() })
       .fetchInto(a)
       .map { it.toDomain() }
 
@@ -65,10 +65,10 @@ class ReferentialDao(
       .from(bmaa)
       .leftJoin(s)
       .on(bmaa.SERIES_ID.eq(s.ID))
-      .where(bmaa.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents()))
+      .where(jooqUdfHelper.run { bmaa.NAME.udfStripAccents() }.containsIgnoreCase(search.stripAccents()))
       .and(s.LIBRARY_ID.eq(libraryId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(bmaa.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { bmaa.NAME.collateUnicode3() })
       .fetchInto(bmaa)
       .map { it.toDomain() }
 
@@ -83,10 +83,10 @@ class ReferentialDao(
       .leftJoin(cs)
       .on(bmaa.SERIES_ID.eq(cs.SERIES_ID))
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(bmaa.SERIES_ID.eq(s.ID)) } }
-      .where(bmaa.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents()))
+      .where(jooqUdfHelper.run { bmaa.NAME.udfStripAccents() }.containsIgnoreCase(search.stripAccents()))
       .and(cs.COLLECTION_ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(bmaa.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { bmaa.NAME.collateUnicode3() })
       .fetchInto(bmaa)
       .map { it.toDomain() }
 
@@ -99,10 +99,10 @@ class ReferentialDao(
       .selectDistinct(bmaa.NAME, bmaa.ROLE)
       .from(bmaa)
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(bmaa.SERIES_ID.eq(s.ID)) } }
-      .where(bmaa.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents()))
+      .where(jooqUdfHelper.run { bmaa.NAME.udfStripAccents() }.containsIgnoreCase(search.stripAccents()))
       .and(bmaa.SERIES_ID.eq(seriesId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(bmaa.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { bmaa.NAME.collateUnicode3() })
       .fetchInto(bmaa)
       .map { it.toDomain() }
 
@@ -177,7 +177,7 @@ class ReferentialDao(
               .leftJoin(rb)
               .on(b.ID.eq(rb.BOOK_ID))
         }.where(noCondition())
-        .apply { search?.let { and(bmaa.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents())) } }
+        .apply { search?.let { and(jooqUdfHelper.run { bmaa.NAME.udfStripAccents() }.containsIgnoreCase(search.stripAccents())) } }
         .apply { role?.let { and(bmaa.ROLE.eq(role)) } }
         .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
         .apply {
@@ -192,7 +192,7 @@ class ReferentialDao(
         }
 
     val count = dslRO.fetchCount(query)
-    val sort = bmaa.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3)
+    val sort = jooqUdfHelper.run { bmaa.NAME.collateUnicode3() }
 
     val items =
       query
@@ -220,9 +220,9 @@ class ReferentialDao(
       .selectDistinct(a.NAME)
       .from(a)
       .apply { filterOnLibraryIds?.let { leftJoin(b).on(a.BOOK_ID.eq(b.ID)) } }
-      .where(a.NAME.udfStripAccents().containsIgnoreCase(search.stripAccents()))
+      .where(jooqUdfHelper.run { a.NAME.udfStripAccents() }.containsIgnoreCase(search.stripAccents()))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
-      .orderBy(a.NAME.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { a.NAME.collateUnicode3() })
       .fetch(a.NAME)
 
   override fun findAllAuthorsRoles(filterOnLibraryIds: Collection<String>?): List<String> =
@@ -248,7 +248,7 @@ class ReferentialDao(
             .on(g.SERIES_ID.eq(s.ID))
             .where(s.LIBRARY_ID.`in`(it))
         }
-      }.orderBy(g.GENRE.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      }.orderBy(jooqUdfHelper.run { g.GENRE.collateUnicode3() })
       .fetchSet(g.GENRE)
 
   override fun findAllGenresByLibraries(
@@ -262,7 +262,7 @@ class ReferentialDao(
       .on(g.SERIES_ID.eq(s.ID))
       .where(s.LIBRARY_ID.`in`(libraryIds))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(g.GENRE.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { g.GENRE.collateUnicode3() })
       .fetchSet(g.GENRE)
 
   override fun findAllGenresByCollection(
@@ -277,7 +277,7 @@ class ReferentialDao(
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(g.SERIES_ID.eq(s.ID)) } }
       .where(cs.COLLECTION_ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(g.GENRE.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { g.GENRE.collateUnicode3() })
       .fetchSet(g.GENRE)
 
   override fun findAllSeriesAndBookTags(filterOnLibraryIds: Collection<String>?): Set<String> =
@@ -351,7 +351,7 @@ class ReferentialDao(
             .on(st.SERIES_ID.eq(s.ID))
             .where(s.LIBRARY_ID.`in`(it))
         }
-      }.orderBy(st.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      }.orderBy(jooqUdfHelper.run { st.TAG.collateUnicode3() })
       .fetchSet(st.TAG)
 
   override fun findAllSeriesTagsByLibrary(
@@ -365,7 +365,7 @@ class ReferentialDao(
       .on(st.SERIES_ID.eq(s.ID))
       .where(s.LIBRARY_ID.eq(libraryId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(st.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { st.TAG.collateUnicode3() })
       .fetchSet(st.TAG)
 
   override fun findAllBookTagsBySeries(
@@ -379,7 +379,7 @@ class ReferentialDao(
       .on(bt.BOOK_ID.eq(b.ID))
       .where(b.SERIES_ID.eq(seriesId))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
-      .orderBy(bt.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { bt.TAG.collateUnicode3() })
       .fetchSet(bt.TAG)
 
   override fun findAllBookTagsByReadList(
@@ -395,7 +395,7 @@ class ReferentialDao(
       .on(bt.BOOK_ID.eq(rb.BOOK_ID))
       .where(rb.READLIST_ID.eq(readListId))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
-      .orderBy(bt.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { bt.TAG.collateUnicode3() })
       .fetchSet(bt.TAG)
 
   override fun findAllSeriesTagsByCollection(
@@ -410,7 +410,7 @@ class ReferentialDao(
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(st.SERIES_ID.eq(s.ID)) } }
       .where(cs.COLLECTION_ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(st.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { st.TAG.collateUnicode3() })
       .fetchSet(st.TAG)
 
   override fun findAllBookTags(filterOnLibraryIds: Collection<String>?): Set<String> =
@@ -423,7 +423,7 @@ class ReferentialDao(
             .on(bt.BOOK_ID.eq(b.ID))
             .where(b.LIBRARY_ID.`in`(it))
         }
-      }.orderBy(bt.TAG.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      }.orderBy(jooqUdfHelper.run { bt.TAG.collateUnicode3() })
       .fetchSet(bt.TAG)
 
   override fun findAllLanguages(filterOnLibraryIds: Collection<String>?): Set<String> =
@@ -474,7 +474,7 @@ class ReferentialDao(
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(sd.SERIES_ID.eq(s.ID)) } }
       .where(sd.PUBLISHER.ne(""))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(sd.PUBLISHER.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { sd.PUBLISHER.collateUnicode3() })
       .fetchSet(sd.PUBLISHER)
 
   override fun findAllPublishers(
@@ -490,7 +490,7 @@ class ReferentialDao(
         .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
 
     val count = dslRO.fetchCount(query)
-    val sort = sd.PUBLISHER.collate(SqliteUdfDataSource.COLLATION_UNICODE_3)
+    val sort = jooqUdfHelper.run { sd.PUBLISHER.collateUnicode3() }
 
     val items =
       query
@@ -521,7 +521,7 @@ class ReferentialDao(
       .where(sd.PUBLISHER.ne(""))
       .and(s.LIBRARY_ID.`in`(libraryIds))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(sd.PUBLISHER.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { sd.PUBLISHER.collateUnicode3() })
       .fetchSet(sd.PUBLISHER)
 
   override fun findAllPublishersByCollection(
@@ -537,7 +537,7 @@ class ReferentialDao(
       .where(sd.PUBLISHER.ne(""))
       .and(cs.COLLECTION_ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(sd.PUBLISHER.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { sd.PUBLISHER.collateUnicode3() })
       .fetchSet(sd.PUBLISHER)
 
   override fun findAllAgeRatings(filterOnLibraryIds: Collection<String>?): Set<Int?> =
@@ -633,7 +633,7 @@ class ReferentialDao(
             .on(sl.SERIES_ID.eq(s.ID))
             .where(s.LIBRARY_ID.`in`(it))
         }
-      }.orderBy(sl.LABEL.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      }.orderBy(jooqUdfHelper.run { sl.LABEL.collateUnicode3() })
       .fetchSet(sl.LABEL)
 
   override fun findAllSharingLabelsByLibraries(
@@ -647,7 +647,7 @@ class ReferentialDao(
       .on(sl.SERIES_ID.eq(s.ID))
       .where(s.LIBRARY_ID.`in`(libraryIds))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(sl.LABEL.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { sl.LABEL.collateUnicode3() })
       .fetchSet(sl.LABEL)
 
   override fun findAllSharingLabelsByCollection(
@@ -662,7 +662,7 @@ class ReferentialDao(
       .apply { filterOnLibraryIds?.let { leftJoin(s).on(sl.SERIES_ID.eq(s.ID)) } }
       .where(cs.COLLECTION_ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
-      .orderBy(sl.LABEL.collate(SqliteUdfDataSource.COLLATION_UNICODE_3))
+      .orderBy(jooqUdfHelper.run { sl.LABEL.collateUnicode3() })
       .fetchSet(sl.LABEL)
 
   private fun BookMetadataAuthorRecord.toDomain(): Author =

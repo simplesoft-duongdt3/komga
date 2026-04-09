@@ -12,9 +12,9 @@ until docker exec komga-postgres pg_isready -U komga -d komga; do
   sleep 1
 done
 
-echo "Manually applying the consolidated PostgreSQL schema..."
+#echo "Manually applying the consolidated PostgreSQL schema..."
 # We apply the big script manually to the DB
-docker exec -i komga-postgres psql -U komga -d komga < komga/src/flyway/resources/db/migration/postgresql/V001__initial_migration.sql
+#docker exec -i komga-postgres psql -U komga -d komga < komga/src/flyway/resources/db/migration/postgresql/V001__initial_migration.sql
 
 echo "Running Komga with PostgreSQL..."
 # Note: Use KOMGA_DATABASE_URL and other matching properties

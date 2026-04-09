@@ -5,6 +5,7 @@ import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.impl.DSL
 import java.sql.Connection
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val log = KotlinLogging.logger {}
 
@@ -12,14 +13,34 @@ class PostgresUdfProvider : DatabaseUdfProvider {
   override val udfStripAccentsName = "UDF_STRIP_ACCENTS"
   override val collationUnicode3Name = "COLLATION_UNICODE_3"
 
+  private val icuCollationAvailable = AtomicBoolean(true) // Assume available by default
+  private var icuCollationChecked = false
+  private val lock = Any()
+
   override fun Field<String>.udfStripAccents(): Field<String> =
     // Use PostgreSQL's unaccent extension
     DSL.function("unaccent", String::class.java, this)
 
-  override fun Field<String>.collateUnicode3(): Field<String> =
-    // PostgreSQL uses ICU collations, we'll use "und-u-ks-level2" for Unicode collation
-    // which provides case-insensitive, accent-insensitive sorting
-    this.collate("und-u-ks-level2")
+  override fun Field<String>.collateUnicode3(): Field<String> {
+    val collationName = if (isIcuCollationAvailable()) "und-u-ks-level2" else "C"
+    log.trace { "Using collation: $collationName for Unicode sorting" }
+    return this.collate(collationName)
+  }
+
+  private fun isIcuCollationAvailable(): Boolean {
+    if (icuCollationChecked) {
+      return icuCollationAvailable.get()
+    }
+
+    synchronized(lock) {
+      if (!icuCollationChecked) {
+        // Default to true, will be updated when connection is initialized
+        icuCollationAvailable.set(true)
+        icuCollationChecked = true
+      }
+      return icuCollationAvailable.get()
+    }
+  }
 
   override fun regexp(field: Field<String>, pattern: String, caseSensitive: Boolean): Condition {
     // PostgreSQL uses ~ for regex matching, ~* for case-insensitive
@@ -33,6 +54,9 @@ class PostgresUdfProvider : DatabaseUdfProvider {
   override fun initializeConnection(connection: Any) {
     val pgConnection = connection as Connection
     log.debug { "Initializing PostgreSQL connection with custom functions" }
+
+    // Check ICU collation availability
+    checkIcuCollationAvailability(pgConnection)
 
     // Ensure unaccent extension is available
     try {
@@ -65,6 +89,43 @@ class PostgresUdfProvider : DatabaseUdfProvider {
       log.debug { "Created PostgreSQL function $udfStripAccentsName" }
     } catch (e: Exception) {
       log.error(e) { "Failed to create PostgreSQL function $udfStripAccentsName" }
+    }
+  }
+
+  private fun checkIcuCollationAvailability(connection: Connection) {
+    synchronized(lock) {
+      if (icuCollationChecked) {
+        return
+      }
+
+      try {
+        // Check if the ICU collation exists in pg_collation
+        val checkCollationSQL = """
+          SELECT 1 FROM pg_collation 
+          WHERE collname = 'und-u-ks-level2' 
+          AND collencoding = -1  -- Works for any encoding
+        """.trimIndent()
+        
+        val rs = connection.createStatement().executeQuery(checkCollationSQL)
+        val available = rs.next()
+        
+        icuCollationAvailable.set(available)
+        icuCollationChecked = true
+        
+        if (available) {
+          log.info { "ICU collation 'und-u-ks-level2' is available" }
+        } else {
+          log.warn { 
+            "ICU collation 'und-u-ks-level2' is not available. " +
+            "Falling back to binary collation 'C'. " +
+            "Sorting may be case-sensitive and accent-sensitive."
+          }
+        }
+      } catch (e: Exception) {
+        log.error(e) { "Failed to check ICU collation availability" }
+        icuCollationAvailable.set(false)
+        icuCollationChecked = true
+      }
     }
   }
 }

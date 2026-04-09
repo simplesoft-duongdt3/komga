@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import kotlin.math.ceil
 import kotlin.time.measureTime
 
@@ -36,6 +37,7 @@ class SearchIndexLifecycle(
     luceneHelper.setIndexVersion(INDEX_VERSION)
   }
 
+  @Transactional
   fun rebuildIndex(entities: Set<LuceneEntity>? = null) {
     val targetEntities = entities ?: LuceneEntity.entries.toSet()
 

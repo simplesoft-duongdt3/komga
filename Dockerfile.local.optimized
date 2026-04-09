@@ -49,6 +49,10 @@ COPY komga-tray ./komga-tray
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/dist/ komga/src/main/resources/public/
 
+# Move index.html to templates directory for Thymeleaf processing
+RUN mkdir -p komga/src/main/resources/templates && \
+    mv komga/src/main/resources/public/index.html komga/src/main/resources/templates/
+
 # Build the backend JAR (skip prepareThymeLeaf since frontend is already built)
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN ./gradlew :komga:bootJar -x test -x generateGitProperties -x prepareThymeLeaf

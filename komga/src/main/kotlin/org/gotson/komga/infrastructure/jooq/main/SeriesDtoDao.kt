@@ -36,6 +36,7 @@ import org.jooq.SelectOnConditionStep
 import org.jooq.impl.DSL
 import org.jooq.impl.DSL.count
 import org.jooq.impl.DSL.countDistinct
+import org.jooq.impl.DSL.inline
 import org.jooq.impl.DSL.lower
 import org.jooq.impl.DSL.substring
 import org.springframework.beans.factory.annotation.Qualifier
@@ -148,7 +149,7 @@ class SeriesDtoDao(
     val seriesIds = luceneHelper.searchEntitiesIds(search.fullTextSearch, LuceneEntity.Series)
     val searchCondition = s.ID.inOrNoCondition(seriesIds)
 
-    val firstChar = lower(substring(d.TITLE_SORT, 1, 1))
+    val firstChar = lower(substring(d.TITLE_SORT, inline(1), inline(1)))
     return dslRO
       .select(firstChar, count())
       .from(s)

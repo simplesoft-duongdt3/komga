@@ -87,7 +87,7 @@ class ReadListDao(
         null
       else
         dslRO
-          .selectDistinct(rl.ID)
+          .select(rl.ID)
           .from(rl)
           .leftJoin(rlb)
           .on(rl.ID.eq(rlb.READLIST_ID))
@@ -95,6 +95,7 @@ class ReadListDao(
           .on(rlb.BOOK_ID.eq(b.ID))
           .apply { if (restrictions.isRestricted) leftJoin(sd).on(sd.SERIES_ID.eq(b.SERIES_ID)) }
           .where(conditions)
+          .groupBy(rl.ID)
 
     val count =
       if (queryIds != null)

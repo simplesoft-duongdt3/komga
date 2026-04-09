@@ -92,11 +92,12 @@ class SeriesDao(
 
   override fun findAllByTitleContaining(title: String): Collection<Series> =
     dslRO
-      .selectDistinct(*s.fields())
+      .select(*s.fields())
       .from(s)
       .leftJoin(d)
       .on(s.ID.eq(d.SERIES_ID))
       .where(d.TITLE.containsIgnoreCase(title))
+      .groupBy(s.ID)
       .fetchInto(s)
       .map { it.toDomain() }
 

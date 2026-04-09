@@ -14,13 +14,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U komga"]
+      test: [ "CMD-SHELL", "pg_isready -U komga" ]
       interval: 10s
       timeout: 5s
       retries: 5
 
   komga:
-    image: komga:latest
+    image: komga-local:1.24.3.2026040903
     container_name: komga-backend
     depends_on:
       postgres:
@@ -37,6 +37,11 @@ services:
       SPRING_FLYWAY_ENABLED: "true"
       SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
       SPRING_FLYWAY_BASELINE_VERSION: "20250730173126"
+      JAVA_TOOL_OPTIONS: "-Xmx3G"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
     ports:
       - "25600:25600"
     volumes:

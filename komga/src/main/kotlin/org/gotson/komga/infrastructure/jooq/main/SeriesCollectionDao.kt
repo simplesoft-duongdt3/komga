@@ -84,7 +84,7 @@ class SeriesCollectionDao(
         null
       else
         dslRO
-          .selectDistinct(c.ID)
+          .select(c.ID)
           .from(c)
           .leftJoin(cs)
           .on(c.ID.eq(cs.COLLECTION_ID))
@@ -93,6 +93,7 @@ class SeriesCollectionDao(
           .leftJoin(sd)
           .on(cs.SERIES_ID.eq(sd.SERIES_ID))
           .where(conditions)
+          .groupBy(c.ID)
 
     val count =
       if (queryIds != null)

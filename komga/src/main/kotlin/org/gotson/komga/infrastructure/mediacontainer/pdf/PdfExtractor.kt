@@ -71,7 +71,16 @@ class PdfExtractor(
   private fun getScale(
     width: Float,
     height: Float,
-  ) = resolution / minOf(width, height)
+  ): Float {
+    val targetScale = resolution / minOf(width, height)
+    // Safety cap: never allow any dimension to exceed 32768 pixels to prevent OOM and JPEG write errors
+    val maxDimension = maxOf(width, height)
+    return if (maxDimension * targetScale > 32768) {
+      32768f / maxDimension
+    } else {
+      targetScale
+    }
+  }
 
   fun scaleDimension(dimension: Dimension): Dimension {
     val scale = getScale(dimension.width.toFloat(), dimension.height.toFloat())

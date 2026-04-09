@@ -2,19 +2,21 @@ package org.gotson.komga.infrastructure.jooq
 
 import com.github.f4b6a3.tsid.TsidCreator
 import org.jooq.DSLContext
+import org.jooq.SQLDialect
 import org.jooq.impl.DSL
 import java.io.Closeable
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlin.text.lowercase
-
 
 private val logger = KotlinLogging.logger {}
+
 /**
  * Temporary table with a single STRING column.
  * This is made to store collection of values that are too long to be specified in a query condition,
  * by using a sub-select instead.
  *
- * The table name is automatically generated, and the table is dropped when the object is closed.
+ * For SQLite: creates a temporary table per instance, dropped on close.
+ * For PostgreSQL: uses the permanent TEMP_INDEXING table with INDEX_NAME as discriminator,
+ * rows are deleted on close.
  */
 class TempTable private constructor(
   private val dslContext: DSLContext,
@@ -26,18 +28,15 @@ class TempTable private constructor(
 
   fun create() {
     val dialect = dslContext.dialect()
-    System.out.println("Creating temporary table " + name + " for dialect " + dialect.name)
-    logger.warn { "Creating temporary table " + name + " for dialect " + dialect.name }
-    val sql = if (dialect.name.lowercase().contains("postgres")) {
-      // For PostgreSQL, create an unlogged table (faster) that will be explicitly dropped
-      "CREATE TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
-    } else {
-      // For SQLite, use temporary tables as before
-      "CREATE TEMPORARY TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
+    if (isPostgres(dialect)) {
+      // PostgreSQL uses the permanent TEMP_INDEXING table — no DDL needed
+      logger.debug { "Using TEMP_INDEXING table with INDEX_NAME=$name" }
+      created = true
+      return
     }
-
-    System.out.println("Creating temporary table " + name + " for dialect " + dialect.name + " with SQL: " + sql)
-    logger.warn { "Creating temporary table " + name + " for dialect " + dialect.name + " with SQL: " + sql }
+    // SQLite: create temporary table as before
+    val sql = "CREATE TEMPORARY TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
+    logger.debug { "Creating temporary table $name for dialect ${dialect.name}" }
     dslContext.execute(sql)
     created = true
   }
@@ -48,39 +47,75 @@ class TempTable private constructor(
   ) {
     if (!created) create()
     if (collection.isNotEmpty()) {
+      val dialect = dslContext.dialect()
+
       collection.chunked(batchSize).forEach { chunk ->
-        dslContext
-          .batch(
-            dslContext.insertInto(DSL.table(DSL.name(name)), DSL.field(DSL.name("STRING"), String::class.java)).values(null as String?),
-          ).also { step ->
-            chunk.forEach {
-              step.bind(it)
-            }
-          }.execute()
-      }
-    }
-  }
-
-  fun selectTempStrings() = dslContext.select(DSL.field(DSL.name("STRING"), String::class.java)).from(DSL.table(DSL.name(name)))
-
-  override fun close() {
-    if (created) {
-       val dialect = dslContext.dialect()
-       if (!dialect.name.lowercase().contains("postgres")) {
-        try {
-          System.out.println("Dropping temporary table " + name)
-          logger.warn { "Dropping temporary table " + name}
-          dslContext.dropTableIfExists(name).execute()
-        } catch (e: Exception) {
-          // Ignore errors when dropping table, especially if transaction is aborted
-          // For PostgreSQL, unlogged tables will persist but that's acceptable
-          System.out.println("Error dropping temporary table " + name + ": " + e.message)
+        if (isPostgres(dialect)) {
+          // Insert into permanent TEMP_INDEXING table with INDEX_NAME discriminator
+          dslContext
+            .batch(
+              dslContext.insertInto(
+                DSL.table(DSL.name("TEMP_INDEXING")),
+                DSL.field(DSL.name("STRING"), String::class.java),
+                DSL.field(DSL.name("INDEX_NAME"), String::class.java),
+              ).values(null as String?, null as String?),
+            ).also { step ->
+              chunk.forEach { step.bind(it, name) }
+            }.execute()
+        } else {
+          // SQLite: insert into dynamic temp table
+          dslContext
+            .batch(
+              dslContext.insertInto(DSL.table(DSL.name(name)), DSL.field(DSL.name("STRING"), String::class.java)).values(null as String?),
+            ).also { step ->
+              chunk.forEach {
+                step.bind(it)
+              }
+            }.execute()
         }
       }
     }
   }
 
+  fun selectTempStrings() =
+    if (isPostgres(dslContext.dialect())) {
+      // Select from permanent table, filtered by this instance's INDEX_NAME
+      dslContext
+        .select(DSL.field(DSL.name("STRING"), String::class.java))
+        .from(DSL.table(DSL.name("TEMP_INDEXING")))
+        .where(DSL.field(DSL.name("INDEX_NAME"), String::class.java).eq(name))
+    } else {
+      // SQLite: select from dynamic temp table
+      dslContext
+        .select(DSL.field(DSL.name("STRING"), String::class.java))
+        .from(DSL.table(DSL.name(name)))
+    }
+
+  override fun close() {
+    if (!created) return
+    val dialect = dslContext.dialect()
+    try {
+      if (isPostgres(dialect)) {
+        // Delete rows for this INDEX_NAME from the shared table
+        dslContext
+          .deleteFrom(DSL.table(DSL.name("TEMP_INDEXING")))
+          .where(DSL.field(DSL.name("INDEX_NAME"), String::class.java).eq(name))
+          .execute()
+        logger.debug { "Cleaned up TEMP_INDEXING rows for INDEX_NAME=$name" }
+      } else {
+        // SQLite: drop the temporary table
+        dslContext.dropTableIfExists(name).execute()
+        logger.debug { "Dropped temporary table $name" }
+      }
+    } catch (e: Exception) {
+      logger.warn { "Error cleaning up temp data for $name: ${e.message}" }
+    }
+  }
+
   companion object {
+    private fun isPostgres(dialect: SQLDialect): Boolean =
+      dialect.name.lowercase().contains("postgres")
+
     private fun generateName(): String {
       val tsid = TsidCreator.getTsid256().toString()
       return "temp_v2_$tsid"

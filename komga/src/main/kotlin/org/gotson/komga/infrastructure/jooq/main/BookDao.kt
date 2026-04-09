@@ -172,6 +172,7 @@ class BookDao(
             }
           }
         }.where(bookCondition.first)
+        .groupBy(b.ID)
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
         .fetchInto(b)

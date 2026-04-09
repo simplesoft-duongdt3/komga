@@ -123,7 +123,7 @@ class SeriesDao(
 
     val query =
       dslRO
-        .selectDistinct(*s.fields())
+        .select(*s.fields())
         .from(s)
         .apply {
           joins.forEach { join ->
@@ -142,6 +142,7 @@ class SeriesDao(
             }
           }
         }.where(conditions)
+        .groupBy(s.ID)
 
     val count = dslRO.fetchCount(query)
 

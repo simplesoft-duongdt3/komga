@@ -3,9 +3,10 @@ application.version: 1.0
 komga:
   database:
     file: /tmp/komga/database.sqlite
-  config-dir: /tmp/komga
   tasks-db:
     file: /tmp/komga/tasks.sqlite
+  lucene:
+    data-directory: /tmp/komga/lucene
 
 spring:
   flyway:

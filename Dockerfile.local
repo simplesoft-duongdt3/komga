@@ -35,8 +35,10 @@ WORKDIR /app
 # Copy built artifact from build stage
 COPY --from=build /app/komga/build/libs/komga-*.jar komga.jar
 
-# Create non-root user
-RUN addgroup -S komga && adduser -S komga -G komga
+# Create non-root user and ensure config/tmp directories are writable
+RUN addgroup -S komga && adduser -S komga -G komga && \
+    mkdir -p /config /tmp/komga && \
+    chown -R komga:komga /config /tmp/komga
 USER komga
 
 EXPOSE 25600

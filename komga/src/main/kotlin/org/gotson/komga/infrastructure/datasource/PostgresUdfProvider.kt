@@ -13,7 +13,7 @@ class PostgresUdfProvider : DatabaseUdfProvider {
   override val udfStripAccentsName = "UDF_STRIP_ACCENTS"
   override val collationUnicode3Name = "COLLATION_UNICODE_3"
 
-  private val icuCollationAvailable = AtomicBoolean(true) // Assume available by default
+  private val icuCollationAvailable = AtomicBoolean(false) // Default to false for safety
   private var icuCollationChecked = false
   private val lock = Any()
 
@@ -33,11 +33,8 @@ class PostgresUdfProvider : DatabaseUdfProvider {
     }
 
     synchronized(lock) {
-      if (!icuCollationChecked) {
-        // Default to true, will be updated when connection is initialized
-        icuCollationAvailable.set(true)
-        icuCollationChecked = true
-      }
+      // If still not checked, it remains false by default until initializeConnection is called.
+      // We don't mark it as checked here to allow a future initializeConnection call to perform the real check.
       return icuCollationAvailable.get()
     }
   }

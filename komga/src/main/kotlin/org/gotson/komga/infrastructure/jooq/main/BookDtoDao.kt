@@ -97,16 +97,16 @@ class BookDtoDao(
       "readList.number" to rlb.NUMBER,
     )
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(pageable: Pageable): Page<BookDto> = findAll(BookSearch(), SearchContext.ofAnonymousUser(), pageable)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(
     context: SearchContext,
     pageable: Pageable,
   ): Page<BookDto> = findAll(BookSearch(), context, pageable)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(
     search: BookSearch,
     context: SearchContext,
@@ -213,7 +213,7 @@ class BookDtoDao(
     }
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findByIdOrNull(
     bookId: String,
     userId: String,
@@ -224,19 +224,19 @@ class BookDtoDao(
       .fetchAndMap()
       .firstOrNull()
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findPreviousInSeriesOrNull(
     bookId: String,
     userId: String,
   ): BookDto? = findSiblingSeries(bookId, userId, next = false)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findNextInSeriesOrNull(
     bookId: String,
     userId: String,
   ): BookDto? = findSiblingSeries(bookId, userId, next = true)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findPreviousInReadListOrNull(
     readList: ReadList,
     bookId: String,
@@ -245,7 +245,7 @@ class BookDtoDao(
     restrictions: ContentRestrictions,
   ): BookDto? = findSiblingReadList(readList, bookId, userId, filterOnLibraryIds, restrictions, next = false)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findNextInReadListOrNull(
     readList: ReadList,
     bookId: String,
@@ -254,7 +254,7 @@ class BookDtoDao(
     restrictions: ContentRestrictions,
   ): BookDto? = findSiblingReadList(readList, bookId, userId, filterOnLibraryIds, restrictions, next = true)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAllOnDeck(
     userId: String,
     filterOnLibraryIds: Collection<String>?,
@@ -280,7 +280,7 @@ class BookDtoDao(
     )
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAllDuplicates(
     userId: String,
     pageable: Pageable,

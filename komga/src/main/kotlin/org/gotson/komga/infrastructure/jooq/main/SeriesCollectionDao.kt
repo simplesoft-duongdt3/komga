@@ -59,6 +59,7 @@ class SeriesCollectionDao(
       .where(c.ID.eq(collectionId))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
       .apply { if (restrictions.isRestricted) and(restrictions.toCondition()) }
+      .groupBy(c.ID)
       .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
       .firstOrNull()
 
@@ -112,6 +113,7 @@ class SeriesCollectionDao(
         .selectBase(restrictions.isRestricted)
         .where(conditions)
         .apply { if (queryIds != null) and(c.ID.`in`(queryIds)) }
+        .groupBy(c.ID)
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
         .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
@@ -147,6 +149,7 @@ class SeriesCollectionDao(
       .where(c.ID.`in`(queryIds))
       .apply { filterOnLibraryIds?.let { and(s.LIBRARY_ID.`in`(it)) } }
       .apply { if (restrictions.isRestricted) and(restrictions.toCondition()) }
+      .groupBy(c.ID)
       .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
   }
 
@@ -169,12 +172,13 @@ class SeriesCollectionDao(
     dslRO
       .selectBase()
       .where(c.NAME.equalIgnoreCase(name))
+      .groupBy(c.ID)
       .fetchAndMap(dslRO, null)
       .firstOrNull()
 
   private fun DSLContext.selectBase(joinOnSeriesMetadata: Boolean = false) =
     this
-      .selectDistinct(*c.fields())
+      .select(*c.fields())
       .from(c)
       .leftJoin(cs)
       .on(c.ID.eq(cs.COLLECTION_ID))

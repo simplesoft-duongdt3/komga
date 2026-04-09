@@ -98,16 +98,16 @@ class SeriesDtoDao(
       "random" to DSL.rand(),
     )
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(pageable: Pageable): Page<SeriesDto> = findAll(SeriesSearch(), SearchContext.ofAnonymousUser(), pageable)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(
     context: SearchContext,
     pageable: Pageable,
   ): Page<SeriesDto> = findAll(SeriesSearch(), context, pageable)
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAll(
     search: SeriesSearch,
     context: SearchContext,
@@ -121,7 +121,7 @@ class SeriesDtoDao(
     return findAll(conditionsRefined, context.userId, pageable, joins, search.fullTextSearch)
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findAllRecentlyUpdated(
     search: SeriesSearch,
     context: SearchContext,
@@ -135,7 +135,7 @@ class SeriesDtoDao(
     return findAll(conditionsRefined, context.userId, pageable, joins, search.fullTextSearch)
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun countByFirstCharacter(
     search: SeriesSearch,
     context: SearchContext,
@@ -184,7 +184,7 @@ class SeriesDtoDao(
       }
   }
 
-  @Transactional(readOnly = true)
+  @Transactional
   override fun findByIdOrNull(
     seriesId: String,
     userId: String,

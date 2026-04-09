@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Configuration
-COMPOSE_FILE="docker-compose.local.yml"
+COMPOSE_FILE="docker-compose.yml"
 DB_PASSWORD="komga123"
 
 echo "Starting PostgreSQL container..."

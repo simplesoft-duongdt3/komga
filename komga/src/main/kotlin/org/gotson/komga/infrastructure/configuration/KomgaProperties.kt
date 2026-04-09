@@ -22,6 +22,7 @@ class KomgaProperties {
     try {
       Path(database.file).parent.createDirectories()
       Path(tasksDb.file).parent.createDirectories()
+      if (lucene.dataDirectory.isNotBlank()) Path(lucene.dataDirectory).createDirectories()
     } catch (_: Exception) {
     }
   }

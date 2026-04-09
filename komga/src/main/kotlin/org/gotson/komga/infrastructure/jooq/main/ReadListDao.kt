@@ -62,6 +62,7 @@ class ReadListDao(
       .where(rl.ID.eq(readListId))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
       .apply { if (restrictions.isRestricted) and(restrictions.toCondition()) }
+      .groupBy(rl.ID)
       .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
       .firstOrNull()
 
@@ -114,6 +115,7 @@ class ReadListDao(
         .selectBase(restrictions.isRestricted)
         .where(conditions)
         .apply { if (queryIds != null) and(rl.ID.`in`(queryIds)) }
+        .groupBy(rl.ID)
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
         .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
@@ -149,6 +151,7 @@ class ReadListDao(
       .where(rl.ID.`in`(queryIds))
       .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
       .apply { if (restrictions.isRestricted) and(restrictions.toCondition()) }
+      .groupBy(rl.ID)
       .fetchAndMap(dslRO, filterOnLibraryIds, restrictions)
   }
 
@@ -171,12 +174,13 @@ class ReadListDao(
     dslRO
       .selectBase()
       .where(rl.NAME.equalIgnoreCase(name))
+      .groupBy(rl.ID)
       .fetchAndMap(dslRO, null)
       .firstOrNull()
 
   private fun DSLContext.selectBase(joinOnSeriesMetadata: Boolean = false) =
     this
-      .selectDistinct(*rl.fields())
+      .select(*rl.fields())
       .from(rl)
       .leftJoin(rlb)
       .on(rl.ID.eq(rlb.READLIST_ID))

@@ -461,7 +461,7 @@ class BookDtoDao(
     lateinit var tags: Map<String, List<String>>
     lateinit var links: Map<String, List<WebLinkDto>>
     // Use dslRO for temp table operations - it returns the appropriate connection based on transaction context
-    dslRO.withTempTable(batchSize, bookIds).use { tempTable ->
+    dslRW.withTempTable(batchSize, bookIds).use { tempTable ->
       authors =
         dslRO
           .selectFrom(a)

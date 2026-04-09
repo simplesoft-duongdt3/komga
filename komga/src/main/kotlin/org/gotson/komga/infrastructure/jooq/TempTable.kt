@@ -30,7 +30,7 @@ class TempTable private constructor(
     logger.warn { "Creating temporary table " + name + " for dialect " + dialect.name }
     val sql = if (dialect.name.lowercase().contains("postgres")) {
       // For PostgreSQL, create an unlogged table (faster) that will be explicitly dropped
-      "CREATE UNLOGGED TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
+      "CREATE TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
     } else {
       // For SQLite, use temporary tables as before
       "CREATE TEMPORARY TABLE IF NOT EXISTS $name (STRING varchar NOT NULL);"
@@ -65,14 +65,17 @@ class TempTable private constructor(
 
   override fun close() {
     if (created) {
-      try {
-        System.out.println("Dropping temporary table " + name)
-        logger.warn { "Dropping temporary table " + name}
-        dslContext.dropTableIfExists(name).execute()
-      } catch (e: Exception) {
-        // Ignore errors when dropping table, especially if transaction is aborted
-        // For PostgreSQL, unlogged tables will persist but that's acceptable
-        System.out.println("Error dropping temporary table " + name + ": " + e.message)
+       val dialect = dslContext.dialect()
+       if (!dialect.name.lowercase().contains("postgres")) {
+        try {
+          System.out.println("Dropping temporary table " + name)
+          logger.warn { "Dropping temporary table " + name}
+          dslContext.dropTableIfExists(name).execute()
+        } catch (e: Exception) {
+          // Ignore errors when dropping table, especially if transaction is aborted
+          // For PostgreSQL, unlogged tables will persist but that's acceptable
+          System.out.println("Error dropping temporary table " + name + ": " + e.message)
+        }
       }
     }
   }

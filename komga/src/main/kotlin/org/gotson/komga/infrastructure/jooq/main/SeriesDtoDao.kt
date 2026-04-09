@@ -322,7 +322,7 @@ class SeriesDtoDao(
     lateinit var aggregatedAuthors: Map<String, List<AuthorDto>>
     lateinit var aggregatedTags: Map<String, List<String>>
 
-    dslRO.withTempTable(batchSize, seriesIds).use { tempTable ->
+    dslRW.withTempTable(batchSize, seriesIds).use { tempTable ->
       genres =
         dslRO
           .selectFrom(g)

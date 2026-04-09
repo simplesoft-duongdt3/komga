@@ -66,7 +66,7 @@ class SeriesDao(
     libraryId: String,
     urls: Collection<URL>,
   ): List<Series> {
-    dslRO.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
+    dslRW.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
       return dslRO
         .selectFrom(s)
         .where(s.LIBRARY_ID.eq(libraryId))

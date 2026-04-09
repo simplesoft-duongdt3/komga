@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 import kotlin.math.ceil
 import kotlin.time.measureTime
+import org.springframework.transaction.annotation.Propagation;
 
 private val logger = KotlinLogging.logger {}
 private const val INDEX_VERSION = 8
@@ -37,7 +38,7 @@ class SearchIndexLifecycle(
     luceneHelper.setIndexVersion(INDEX_VERSION)
   }
 
-  @Transactional
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
   fun rebuildIndex(entities: Set<LuceneEntity>? = null) {
     val targetEntities = entities ?: LuceneEntity.entries.toSet()
 

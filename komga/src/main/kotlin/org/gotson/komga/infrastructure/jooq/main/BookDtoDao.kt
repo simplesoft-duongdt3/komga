@@ -48,6 +48,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import java.net.URL
 
 @Component
@@ -96,13 +97,16 @@ class BookDtoDao(
       "readList.number" to rlb.NUMBER,
     )
 
+  @Transactional
   override fun findAll(pageable: Pageable): Page<BookDto> = findAll(BookSearch(), SearchContext.ofAnonymousUser(), pageable)
 
+  @Transactional
   override fun findAll(
     context: SearchContext,
     pageable: Pageable,
   ): Page<BookDto> = findAll(BookSearch(), context, pageable)
 
+  @Transactional
   override fun findAll(
     search: BookSearch,
     context: SearchContext,
@@ -195,7 +199,7 @@ class BookDtoDao(
           .and(searchCondition)
           .orderBy(orderBy)
           .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-          .fetchAndMap(dslRO)
+          .fetchAndMap()
 
       val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
       return PageImpl(
@@ -209,6 +213,7 @@ class BookDtoDao(
     }
   }
 
+  @Transactional
   override fun findByIdOrNull(
     bookId: String,
     userId: String,
@@ -216,19 +221,22 @@ class BookDtoDao(
     dslRO
       .selectBase(userId)
       .where(b.ID.eq(bookId))
-      .fetchAndMap(dslRO)
+      .fetchAndMap()
       .firstOrNull()
 
+  @Transactional
   override fun findPreviousInSeriesOrNull(
     bookId: String,
     userId: String,
   ): BookDto? = findSiblingSeries(bookId, userId, next = false)
 
+  @Transactional
   override fun findNextInSeriesOrNull(
     bookId: String,
     userId: String,
   ): BookDto? = findSiblingSeries(bookId, userId, next = true)
 
+  @Transactional
   override fun findPreviousInReadListOrNull(
     readList: ReadList,
     bookId: String,
@@ -237,6 +245,7 @@ class BookDtoDao(
     restrictions: ContentRestrictions,
   ): BookDto? = findSiblingReadList(readList, bookId, userId, filterOnLibraryIds, restrictions, next = false)
 
+  @Transactional
   override fun findNextInReadListOrNull(
     readList: ReadList,
     bookId: String,
@@ -245,6 +254,7 @@ class BookDtoDao(
     restrictions: ContentRestrictions,
   ): BookDto? = findSiblingReadList(readList, bookId, userId, filterOnLibraryIds, restrictions, next = true)
 
+  @Transactional
   override fun findAllOnDeck(
     userId: String,
     filterOnLibraryIds: Collection<String>?,
@@ -255,10 +265,10 @@ class BookDtoDao(
 
     val count = dslRO.fetchCount(query)
     val dtos =
-      query
-        .orderBy(sortField.desc())
-        .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap(dslRO)
+       query
+         .orderBy(sortField.desc())
+         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
+         .fetchAndMap()
 
     return PageImpl(
       dtos,
@@ -270,6 +280,7 @@ class BookDtoDao(
     )
   }
 
+  @Transactional
   override fun findAllDuplicates(
     userId: String,
     pageable: Pageable,
@@ -288,12 +299,12 @@ class BookDtoDao(
 
     val orderBy = pageable.sort.toOrderBy(sorts)
     val dtos =
-      dslRO
-        .selectBase(userId)
-        .where(b.FILE_HASH.`in`(hashes.keys))
-        .orderBy(orderBy)
-        .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap(dslRO)
+       dslRO
+         .selectBase(userId)
+         .where(b.FILE_HASH.`in`(hashes.keys))
+         .orderBy(orderBy)
+         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
+         .fetchAndMap()
 
     val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
     return PageImpl(
@@ -330,7 +341,7 @@ class BookDtoDao(
       .orderBy(d.NUMBER_SORT.let { if (next) it.asc() else it.desc() })
       .seek(numberSort)
       .limit(1)
-      .fetchAndMap(dslRO)
+      .fetchAndMap()
       .firstOrNull()
   }
 
@@ -361,7 +372,7 @@ class BookDtoDao(
         .orderBy(rlbAlias(readList.id).NUMBER.let { if (next) it.asc() else it.desc() })
         .seek(numberSort)
         .limit(1)
-        .fetchAndMap(dslRO)
+        .fetchAndMap()
         .firstOrNull()
     } else {
       // it is too complex to perform a seek by release date as it could be null and could also have multiple occurrences of the same value
@@ -390,7 +401,7 @@ class BookDtoDao(
         .where(b.ID.eq(siblingId))
         .apply { filterOnLibraryIds?.let { and(b.LIBRARY_ID.`in`(it)) } }
         .limit(1)
-        .fetchAndMap(dslRO)
+        .fetchAndMap()
         .firstOrNull()
     }
   }
@@ -440,29 +451,32 @@ class BookDtoDao(
       }
   }
 
-  private fun ResultQuery<Record>.fetchAndMap(dsl: DSLContext): MutableList<BookDto> {
-    val records = fetch()
+  private fun ResultQuery<Record>.fetchAndMap(): MutableList<BookDto> = fetchAndMapInternal(this)
+
+  private fun fetchAndMapInternal(query: ResultQuery<Record>): MutableList<BookDto> {
+    val records = query.fetch()
     val bookIds = records.getValues(b.ID)
 
     lateinit var authors: Map<String, List<AuthorDto>>
     lateinit var tags: Map<String, List<String>>
     lateinit var links: Map<String, List<WebLinkDto>>
-    dsl.withTempTable(batchSize, bookIds).use { tempTable ->
+    // Use dslRO for temp table operations - it returns the appropriate connection based on transaction context
+    dslRW.withTempTable(batchSize, bookIds).use { tempTable ->
       authors =
-        dsl
+        dslRO
           .selectFrom(a)
           .where(a.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .filter { it.name != null }
           .groupBy({ it.bookId }, { AuthorDto(it.name, it.role) })
 
       tags =
-        dsl
+        dslRO
           .selectFrom(bt)
           .where(bt.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.bookId }, { it.tag })
 
       links =
-        dsl
+        dslRO
           .selectFrom(bl)
           .where(bl.BOOK_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.bookId }, { WebLinkDto(it.label, it.url) })

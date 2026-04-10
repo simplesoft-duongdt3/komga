@@ -66,7 +66,7 @@ class SeriesDao(
     libraryId: String,
     urls: Collection<URL>,
   ): List<Series> {
-    dslRO.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
+    dslRW.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
       return dslRO
         .selectFrom(s)
         .where(s.LIBRARY_ID.eq(libraryId))
@@ -92,11 +92,12 @@ class SeriesDao(
 
   override fun findAllByTitleContaining(title: String): Collection<Series> =
     dslRO
-      .selectDistinct(*s.fields())
+      .select(*s.fields())
       .from(s)
       .leftJoin(d)
       .on(s.ID.eq(d.SERIES_ID))
       .where(d.TITLE.containsIgnoreCase(title))
+      .groupBy(s.ID)
       .fetchInto(s)
       .map { it.toDomain() }
 
@@ -123,7 +124,7 @@ class SeriesDao(
 
     val query =
       dslRO
-        .selectDistinct(*s.fields())
+        .select(*s.fields())
         .from(s)
         .apply {
           joins.forEach { join ->
@@ -142,6 +143,7 @@ class SeriesDao(
             }
           }
         }.where(conditions)
+        .groupBy(s.ID)
 
     val count = dslRO.fetchCount(query)
 

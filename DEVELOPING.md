@@ -1,3 +1,22 @@
+# Run backend only
+./run-local-with-postgres.sh
+
+# Build
+./build-local-docker.sh
+
+
+# 🚀 Quick‑Start Script
+Created start‑dev‑with‑frontend.sh to automate setup:
+
+./start‑dev‑with‑frontend.sh          # Use default SQLite
+./start‑dev‑with‑frontend.sh --postgres  # Use PostgreSQL
+
+# Deloy dev
+./build-local-docker.sh
+docker tag komga-local:1.24.3 komga:1.24.3.2026040901
+docker compose -f docker-compose.yml down -v
+docker compose -f docker-compose.yml up -d  
+
 # Development guidelines
 
 Thanks a lot for contributing to Komga!

@@ -80,7 +80,7 @@ class BookDao(
 
   @Transactional
   override fun findAllBySeriesIds(seriesIds: Collection<String>): Collection<Book> {
-    dslRO.withTempTable(batchSize, seriesIds).use { tempTable ->
+    dslRW.withTempTable(batchSize, seriesIds).use { tempTable ->
       return dslRO
         .selectFrom(b)
         .where(b.SERIES_ID.`in`(tempTable.selectTempStrings()))
@@ -94,7 +94,7 @@ class BookDao(
     libraryId: String,
     urls: Collection<URL>,
   ): Collection<Book> {
-    dslRO.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
+    dslRW.withTempTable(batchSize, urls.map { it.toString() }).use { tempTable ->
 
       return dslRO
         .selectFrom(b)
@@ -172,6 +172,7 @@ class BookDao(
             }
           }
         }.where(bookCondition.first)
+        .groupBy(b.ID)
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
         .fetchInto(b)

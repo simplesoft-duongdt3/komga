@@ -36,6 +36,7 @@ import org.jooq.SelectOnConditionStep
 import org.jooq.impl.DSL
 import org.jooq.impl.DSL.count
 import org.jooq.impl.DSL.countDistinct
+import org.jooq.impl.DSL.inline
 import org.jooq.impl.DSL.lower
 import org.jooq.impl.DSL.substring
 import org.springframework.beans.factory.annotation.Qualifier
@@ -46,6 +47,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 import java.net.URL
 
 const val BOOKS_UNREAD_COUNT = "booksUnreadCount"
@@ -97,13 +99,16 @@ class SeriesDtoDao(
       "random" to DSL.rand(),
     )
 
+  @Transactional
   override fun findAll(pageable: Pageable): Page<SeriesDto> = findAll(SeriesSearch(), SearchContext.ofAnonymousUser(), pageable)
 
+  @Transactional
   override fun findAll(
     context: SearchContext,
     pageable: Pageable,
   ): Page<SeriesDto> = findAll(SeriesSearch(), context, pageable)
 
+  @Transactional
   override fun findAll(
     search: SeriesSearch,
     context: SearchContext,
@@ -117,6 +122,7 @@ class SeriesDtoDao(
     return findAll(conditionsRefined, context.userId, pageable, joins, search.fullTextSearch)
   }
 
+  @Transactional
   override fun findAllRecentlyUpdated(
     search: SeriesSearch,
     context: SearchContext,
@@ -130,6 +136,7 @@ class SeriesDtoDao(
     return findAll(conditionsRefined, context.userId, pageable, joins, search.fullTextSearch)
   }
 
+  @Transactional
   override fun countByFirstCharacter(
     search: SeriesSearch,
     context: SearchContext,
@@ -142,7 +149,7 @@ class SeriesDtoDao(
     val seriesIds = luceneHelper.searchEntitiesIds(search.fullTextSearch, LuceneEntity.Series)
     val searchCondition = s.ID.inOrNoCondition(seriesIds)
 
-    val firstChar = lower(substring(d.TITLE_SORT, 1, 1))
+    val firstChar = lower(substring(d.TITLE_SORT, inline(1), inline(1)))
     return dslRO
       .select(firstChar, count())
       .from(s)
@@ -178,6 +185,7 @@ class SeriesDtoDao(
       }
   }
 
+  @Transactional
   override fun findByIdOrNull(
     seriesId: String,
     userId: String,
@@ -186,7 +194,7 @@ class SeriesDtoDao(
       .selectBase(userId)
       .where(s.ID.eq(seriesId))
       .groupBy(*groupFields)
-      .fetchAndMap(dslRO)
+      .fetchAndMap()
       .firstOrNull()
 
   private fun DSLContext.selectBase(
@@ -286,7 +294,7 @@ class SeriesDtoDao(
         .and(searchCondition)
         .orderBy(orderBy)
         .apply { if (pageable.isPaged) limit(pageable.pageSize).offset(pageable.offset) }
-        .fetchAndMap(dslRO)
+        .fetchAndMap()
 
     val pageSort = if (orderBy.isNotEmpty()) pageable.sort else Sort.unsorted()
     return PageImpl(
@@ -301,8 +309,10 @@ class SeriesDtoDao(
 
   private fun readProgressConditionSeries(userId: String): Condition = rs.USER_ID.eq(userId).or(rs.USER_ID.isNull)
 
-  private fun ResultQuery<Record>.fetchAndMap(dsl: DSLContext): MutableList<SeriesDto> {
-    val records = fetch()
+  private fun ResultQuery<Record>.fetchAndMap(): MutableList<SeriesDto> = fetchAndMapInternal(this)
+
+  private fun fetchAndMapInternal(query: ResultQuery<Record>): MutableList<SeriesDto> {
+    val records = query.fetch()
     val seriesIds = records.getValues(s.ID)
 
     lateinit var genres: Map<String, List<String>>
@@ -313,46 +323,46 @@ class SeriesDtoDao(
     lateinit var aggregatedAuthors: Map<String, List<AuthorDto>>
     lateinit var aggregatedTags: Map<String, List<String>>
 
-    dsl.withTempTable(batchSize, seriesIds).use { tempTable ->
+    dslRW.withTempTable(batchSize, seriesIds).use { tempTable ->
       genres =
-        dsl
+        dslRO
           .selectFrom(g)
           .where(g.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { it.genre })
 
       tags =
-        dsl
+        dslRO
           .selectFrom(st)
           .where(st.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { it.tag })
 
       sharingLabels =
-        dsl
+        dslRO
           .selectFrom(sl)
           .where(sl.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { it.label })
 
       links =
-        dsl
+        dslRO
           .selectFrom(slk)
           .where(slk.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { WebLinkDto(it.label, it.url) })
 
       alternateTitles =
-        dsl
+        dslRO
           .selectFrom(sat)
           .where(sat.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { AlternateTitleDto(it.label, it.title) })
 
       aggregatedAuthors =
-        dsl
+        dslRO
           .selectFrom(bmaa)
           .where(bmaa.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .filter { it.name != null }
           .groupBy({ it.seriesId }, { AuthorDto(it.name, it.role) })
 
       aggregatedTags =
-        dsl
+        dslRO
           .selectFrom(bmat)
           .where(bmat.SERIES_ID.`in`(tempTable.selectTempStrings()))
           .groupBy({ it.seriesId }, { it.tag })

@@ -39,7 +39,7 @@ class MylarSeriesProvider(
       val metadata = mapper.readValue(seriesJsonPath.toFile(), MylarSeries::class.java).metadata
 
       val title =
-        if (metadata.volume == null || metadata.volume == 1)
+        if (metadata.volume == null || metadata.volume == 1 || metadata.year == null)
           metadata.name
         else
           "${metadata.name} (${metadata.year})"
@@ -51,6 +51,7 @@ class MylarSeriesProvider(
           when (metadata.status) {
             Status.Ended -> SeriesMetadata.Status.ENDED
             Status.Continuing -> SeriesMetadata.Status.ONGOING
+            null -> SeriesMetadata.Status.ONGOING
           },
         summary = metadata.descriptionFormatted ?: metadata.descriptionText,
         readingDirection = null,

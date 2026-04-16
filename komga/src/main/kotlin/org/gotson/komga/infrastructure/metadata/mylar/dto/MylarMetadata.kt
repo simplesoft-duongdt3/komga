@@ -6,28 +6,28 @@ import com.fasterxml.jackson.annotation.JsonProperty
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MylarMetadata(
-  val type: String,
-  val publisher: String,
-  val imprint: String?,
+  val type: String? = null,
+  val publisher: String? = null,
+  val imprint: String? = null,
   val name: String,
   @field:JsonAlias("cid")
-  val comicid: String,
-  val year: Int,
+  val comicid: String? = null,
+  val year: Int? = null,
   @field:JsonProperty("description_text")
-  val descriptionText: String?,
+  val descriptionText: String? = null,
   @field:JsonProperty("description_formatted")
-  val descriptionFormatted: String?,
-  val volume: Int?,
+  val descriptionFormatted: String? = null,
+  val volume: Int? = null,
   @field:JsonProperty("booktype")
-  val bookType: String,
+  val bookType: String? = null,
   @field:JsonProperty("age_rating")
-  val ageRating: AgeRating?,
+  val ageRating: AgeRating? = null,
   @field:JsonProperty("comic_image")
   @field:JsonAlias("ComicImage")
-  val comicImage: String,
+  val comicImage: String? = null,
   @field:JsonProperty("total_issues")
-  val totalIssues: Int,
+  val totalIssues: Int? = null,
   @field:JsonProperty("publication_run")
-  val publicationRun: String,
-  val status: Status,
+  val publicationRun: String? = null,
+  val status: Status? = null,
 )

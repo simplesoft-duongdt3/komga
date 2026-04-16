@@ -209,4 +209,28 @@ class MylarSeriesProviderTest {
       assertThat(titleSort).isEqualTo("Sandman")
     }
   }
+
+  @Test
+  fun `given minimal seriesJson when getting series metadata then metadata patch is valid`() {
+    val metadata =
+      MylarMetadata(
+        name = "Minimal Series",
+        descriptionText = "Minimal description",
+        status = Status.Continuing,
+      )
+    val root = Series(metadata)
+
+    every { mockMapper.readValue(any<File>(), Series::class.java) } returns root
+
+    val patch = mylarSeriesProvider.getSeriesMetadata(series)!!
+
+    with(patch) {
+      assertThat(title).isEqualTo("Minimal Series")
+      assertThat(summary).isEqualTo("Minimal description")
+      assertThat(status).isEqualTo(SeriesMetadata.Status.ONGOING)
+      assertThat(publisher).isNull()
+      assertThat(ageRating).isNull()
+      assertThat(totalBookCount).isNull()
+    }
+  }
 }

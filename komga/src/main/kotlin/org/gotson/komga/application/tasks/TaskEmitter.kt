@@ -158,6 +158,13 @@ class TaskEmitter(
       .let { submitTasks(it) }
   }
 
+  fun verifyBookHash(
+    book: Book,
+    priority: Int = DEFAULT_PRIORITY,
+  ) {
+    submitTask(Task.VerifyBookHash(book.id, priority, book.seriesId))
+  }
+
   fun generateBookThumbnail(
     bookId: String,
     priority: Int = DEFAULT_PRIORITY,
@@ -288,7 +295,7 @@ class TaskEmitter(
   }
 
   private fun submitTasks(tasks: Collection<Task>) {
-    logger.info { "Sending tasks: $tasks" }
+    logger.info { "Sending ${tasks.size} tasks, sampleType=${tasks.firstOrNull()?.javaClass?.simpleName}" }
     tasksRepository.save(tasks)
     eventPublisher.publishEvent(TaskAddedEvent)
   }

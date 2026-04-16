@@ -52,29 +52,39 @@ class TasksDao(
 
   @Transactional
   override fun takeFirst(owner: String): Task? {
-    val task =
+    val record =
       dslRW
-        .selectBase()
-        .where(tasksAvailableCondition)
-        .orderBy(t.PRIORITY.desc(), t.LAST_MODIFIED_DATE)
-        .limit(1)
-        .fetchOne()
-        ?.let {
-          try {
-            objectMapper.readValue(it.value2(), Class.forName(it.value1())) as Task
-          } catch (e: Exception) {
-            logger.error(e) { "Could not deserialize object of type: ${it.value1()}" }
-            null
-          }
-        } ?: return null
+        .resultQuery(
+          """
+          WITH candidate AS (
+            SELECT ID
+            FROM TASK
+            WHERE OWNER IS NULL
+              AND (
+                GROUP_ID IS NULL
+                OR GROUP_ID NOT IN (
+                  SELECT GROUP_ID
+                  FROM TASK
+                  WHERE OWNER IS NOT NULL
+                    AND GROUP_ID IS NOT NULL
+                )
+              )
+            ORDER BY PRIORITY DESC, LAST_MODIFIED_DATE
+            LIMIT 1
+          )
+          UPDATE TASK
+          SET OWNER = ?
+          WHERE ID = (SELECT ID FROM candidate)
+          RETURNING CLASS, PAYLOAD
+          """.trimIndent(),
+          owner,
+        ).fetchOne()
+        ?: return null
 
-    dslRW
-      .update(t)
-      .set(t.OWNER, owner)
-      .where(t.ID.eq(task.uniqueId))
-      .execute()
-
-    return task
+    return toDomain(
+      record.get(t.CLASS.name, String::class.java)!!,
+      record.get(t.PAYLOAD.name, String::class.java)!!,
+    )
   }
 
   override fun findAll(): List<Task> =
@@ -98,10 +108,16 @@ class TasksDao(
       .from(t)
 
   private fun Record2<String, String>.toDomain(): Task? =
+    toDomain(value1(), value2())
+
+  private fun toDomain(
+    className: String,
+    payload: String,
+  ): Task? =
     try {
-      objectMapper.readValue(value2(), Class.forName(value1())) as Task
+      objectMapper.readValue(payload, Class.forName(className)) as Task
     } catch (e: Exception) {
-      logger.error(e) { "Could not deserialize object of type: ${value1()}" }
+      logger.error(e) { "Could not deserialize object of type: $className" }
       null
     }
 

@@ -41,6 +41,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.ZonedDateTime
 
@@ -60,6 +61,9 @@ class BookLifecycleTest(
 
   @MockkBean
   private lateinit var mockAnalyzer: BookAnalyzer
+
+  @MockkBean
+  private lateinit var mockHasher: org.gotson.komga.infrastructure.hash.Hasher
 
   private val library = makeLibrary()
   private val user1 = KomgaUser("user1@example.org", "")
@@ -158,6 +162,50 @@ class BookLifecycleTest(
 
     // then
     assertThat(readProgressRepository.findAll()).hasSize(2)
+  }
+
+  @Test
+  fun `given book hash verification when hash is unchanged then media status is kept`() {
+    makeSeries(name = "series", libraryId = library.id).let { series ->
+      val created = seriesLifecycle.createSeries(series)
+      seriesLifecycle.addBooks(created, listOf(makeBook("1", libraryId = library.id).copy(fileHash = "sameHash")))
+    }
+
+    val book = bookRepository.findAll().first().let {
+      val updated = it.copy(fileHash = "sameHash")
+      bookRepository.update(updated)
+      updated
+    }
+    val media = mediaRepository.findById(book.id)
+    mediaRepository.update(media.copy(status = Media.Status.READY))
+    every { mockHasher.computeHash(any<java.nio.file.Path>()) } returns "sameHash"
+
+    bookLifecycle.verifyHashAndPersist(book)
+
+    assertThat(bookRepository.findByIdOrNull(book.id)!!.fileHash).isEqualTo("sameHash")
+    assertThat(mediaRepository.findById(book.id).status).isEqualTo(Media.Status.READY)
+  }
+
+  @Test
+  fun `given book hash verification when hash changed then media status is outdated`() {
+    makeSeries(name = "series", libraryId = library.id).let { series ->
+      val created = seriesLifecycle.createSeries(series)
+      seriesLifecycle.addBooks(created, listOf(makeBook("1", libraryId = library.id).copy(fileHash = "oldHash")))
+    }
+
+    val book = bookRepository.findAll().first().let {
+      val updated = it.copy(fileHash = "oldHash")
+      bookRepository.update(updated)
+      updated
+    }
+    val media = mediaRepository.findById(book.id)
+    mediaRepository.update(media.copy(status = Media.Status.READY))
+    every { mockHasher.computeHash(any<java.nio.file.Path>()) } returns "newHash"
+
+    bookLifecycle.verifyHashAndPersist(book)
+
+    assertThat(bookRepository.findByIdOrNull(book.id)!!.fileHash).isEqualTo("newHash")
+    assertThat(mediaRepository.findById(book.id).status).isEqualTo(Media.Status.OUTDATED)
   }
 
   @Test

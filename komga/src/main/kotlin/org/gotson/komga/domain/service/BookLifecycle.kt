@@ -115,6 +115,28 @@ class BookLifecycle(
     }
   }
 
+  fun verifyHashAndPersist(book: Book) {
+    logger.info { "Verify hash and persist book: $book" }
+    if (book.fileHash.isBlank()) {
+      logger.info { "Book has no existing hash, skipping verification" }
+      return
+    }
+
+    val hash = hasher.computeHash(book.path)
+    if (hash == book.fileHash) {
+      logger.info { "Book content hash is unchanged, skipping media reset" }
+      return
+    }
+
+    logger.info { "Book content hash changed, mark media as outdated: $book" }
+    transactionTemplate.executeWithoutResult {
+      mediaRepository.findById(book.id).let {
+        mediaRepository.update(it.copy(status = Media.Status.OUTDATED))
+      }
+      bookRepository.update(book.copy(fileHash = hash))
+    }
+  }
+
   fun hashKoreaderAndPersist(book: Book) {
     if (!libraryRepository.findById(book.libraryId).hashKoreader)
       return logger.info { "File hashing for Koreader is disabled for the library, it may have changed since the task was submitted, skipping" }

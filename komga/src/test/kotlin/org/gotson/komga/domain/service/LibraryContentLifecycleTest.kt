@@ -99,6 +99,7 @@ class LibraryContentLifecycleTest(
   fun beforeEach() {
     every { mockTaskEmitter.refreshBookMetadata(any<Book>(), any()) } just Runs
     every { mockTaskEmitter.refreshSeriesMetadata(any<String>(), any()) } just Runs
+    every { mockTaskEmitter.verifyBookHash(any(), any()) } just Runs
   }
 
   @AfterAll
@@ -259,8 +260,6 @@ class LibraryContentLifecycleTest(
         mediaRepository.update(mediaRepository.findById(book.id).copy(status = Media.Status.READY))
       }
 
-      every { mockHasher.computeHash(any<Path>()) } returns "hashed"
-
       // when
       libraryContentLifecycle.scanRootFolder(library)
 
@@ -269,7 +268,7 @@ class LibraryContentLifecycleTest(
       val allBooks = bookRepository.findAll()
 
       verify(exactly = 2) { mockScanner.scanRootFolder(any()) }
-      verify(exactly = 1) { mockHasher.computeHash(any<Path>()) }
+      verify(exactly = 1) { mockTaskEmitter.verifyBookHash(any(), any()) }
 
       assertThat(allSeries).hasSize(1)
       assertThat(allBooks).hasSize(1)
@@ -409,11 +408,13 @@ class LibraryContentLifecycleTest(
 
       // when
       libraryContentLifecycle.scanRootFolder(library)
+      bookLifecycle.verifyHashAndPersist(bookRepository.findAll().first())
 
       // then
       verify(exactly = 2) { mockScanner.scanRootFolder(any()) }
       verify(exactly = 1) { mockAnalyzer.analyze(any(), any()) }
       verify(exactly = 2) { mockHasher.computeHash(any<Path>()) }
+      verify(exactly = 1) { mockTaskEmitter.verifyBookHash(any(), any()) }
 
       bookRepository.findAll().first().let { book ->
         assertThat(book.lastModifiedDate).isNotEqualTo(book.createdDate)

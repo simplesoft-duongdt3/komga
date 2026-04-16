@@ -73,6 +73,16 @@ sealed class Task(
     override fun toString(): String = "AnalyzeBook(bookId='$bookId', priority='$priority')"
   }
 
+  class VerifyBookHash(
+    val bookId: String,
+    priority: Int = DEFAULT_PRIORITY,
+    groupId: String,
+  ) : Task(priority, groupId) {
+    override val uniqueId = "VERIFY_BOOK_HASH_$bookId"
+
+    override fun toString(): String = "VerifyBookHash(bookId='$bookId', priority='$priority')"
+  }
+
   class GenerateBookThumbnail(
     val bookId: String,
     priority: Int = DEFAULT_PRIORITY,

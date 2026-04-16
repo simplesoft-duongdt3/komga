@@ -89,6 +89,11 @@ class TaskHandler(
               if (actions.contains(BookAction.REFRESH_METADATA)) taskEmitter.refreshBookMetadata(book, priority = task.priority + 1)
             } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
 
+          is Task.VerifyBookHash ->
+            bookRepository.findByIdOrNull(task.bookId)?.let { book ->
+              bookLifecycle.verifyHashAndPersist(book)
+            } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
+
           is Task.GenerateBookThumbnail ->
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
               bookLifecycle.generateThumbnailAndPersist(book)

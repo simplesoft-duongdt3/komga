@@ -46,6 +46,7 @@ nbbuild/
 dist/
 nbdist/
 .nb-gradle/
+bin/
 
 ### Komga
 /komga/src/main/resources/public/

@@ -916,10 +916,20 @@
     "unpin": "Unpin"
   },
   "metrics": {
+    "current_tasks": "Current tasks",
     "library_books": "Books per library",
     "library_disk_space": "Library disk space",
     "library_series": "Series per library",
     "library_sidecars": "Sidecars per library",
+    "task_created": "Created",
+    "task_duration": "Duration",
+    "task_owner": "Owner",
+    "task_priority": "Priority",
+    "task_status": "Status",
+    "task_status_queued": "Queued",
+    "task_status_running": "Running",
+    "task_type": "Type",
+    "task_updated": "Updated",
     "tasks_executed": "Tasks executed",
     "tasks_total_time": "Tasks total time",
     "title": "Metrics"

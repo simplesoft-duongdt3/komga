@@ -705,7 +705,7 @@ export default Vue.extend({
       this.incognito = !!(this.$route.query.incognito && this.$route.query.incognito.toString().toLowerCase() === 'true')
 
       const pageDtos = (await this.$komgaBooks.getBookPages(bookId))
-      pageDtos.forEach((p: any) => p['url'] = this.getPageUrl(p))
+      pageDtos.forEach((p: any) => p['url'] = this.getPageUrl(bookId, p))
       this.pages = pageDtos as PageDtoWithUrl[]
 
       this.$debug('[setup]', `pages count:${this.pagesCount}`, 'read progress:', this.book.readProgress)
@@ -745,11 +745,11 @@ export default Vue.extend({
         this.siblingPrevious = {} as BookDto
       }
     },
-    getPageUrl(page: PageDto): string {
+    getPageUrl(bookId: string, page: PageDto): string {
       if (!this.supportedMediaTypes.includes(page.mediaType)) {
-        return bookPageUrl(this.bookId, page.number, this.convertTo)
+        return bookPageUrl(bookId, page.number, this.convertTo)
       } else {
-        return bookPageUrl(this.bookId, page.number)
+        return bookPageUrl(bookId, page.number)
       }
     },
     jumpToPrevious() {

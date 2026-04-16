@@ -93,6 +93,76 @@
         </v-card>
       </v-col>
 
+      <v-col cols="12">
+        <v-card>
+          <v-card-title>{{ $t('metrics.current_tasks') }}</v-card-title>
+          <v-card-text>
+            <v-row dense>
+              <v-col cols="12" md="3">
+                <v-select
+                  v-model="taskFilterStatus"
+                  :items="taskStatusOptions"
+                  item-text="text"
+                  item-value="value"
+                  :label="$t('metrics.task_status').toString()"
+                  clearable
+                  hide-details
+                />
+              </v-col>
+              <v-col cols="12" md="5">
+                <v-select
+                  v-model="taskFilterSimpleType"
+                  :items="taskSimpleTypeOptions"
+                  :label="$t('metrics.task_type').toString()"
+                  multiple
+                  clearable
+                  chips
+                  deletable-chips
+                  hide-details
+                />
+              </v-col>
+            </v-row>
+          </v-card-text>
+          <v-data-table
+            :headers="taskHeaders"
+            :items="taskItems"
+            :options.sync="taskOptions"
+            :server-items-length="taskTotalElements"
+            :loading="taskLoading"
+            :footer-props="{ itemsPerPageOptions: [10, 20, 50] }"
+            class="elevation-1"
+          >
+            <template v-slot:item.status="{ item }">
+              <v-chip small :color="item.status === 'RUNNING' ? 'primary' : undefined" :outlined="item.status !== 'RUNNING'">
+                {{ $t(`metrics.task_status_${item.status.toLowerCase()}`) }}
+              </v-chip>
+            </template>
+
+            <template v-slot:item.owner="{ item }">
+              {{ item.owner || '-' }}
+            </template>
+
+            <template v-slot:item.createdDate="{ item }">
+              {{ formatDateTime(item.createdDate) }}
+            </template>
+
+            <template v-slot:item.lastModifiedDate="{ item }">
+              {{ formatDateTime(item.lastModifiedDate) }}
+            </template>
+
+            <template v-slot:item.durationMillis="{ item }">
+              {{ formatDuration(item.durationMillis) }}
+            </template>
+
+            <template v-slot:footer.prepend>
+              <v-btn icon @click="loadTaskTable">
+                <v-icon>mdi-refresh</v-icon>
+              </v-btn>
+            </template>
+          </v-data-table>
+        </v-card>
+      </v-col>
+
     </v-row>
   </v-container>
 </template>
@@ -100,7 +170,9 @@
 <script lang="ts">
 import Vue from 'vue'
 import {MetricDto} from '@/types/komga-metrics'
+import {ERROR, ErrorEvent} from '@/types/events'
 import {getFileSize} from '@/functions/file'
+import {TaskDto, TaskStatus} from '@/types/komga-tasks'
 
 export default Vue.extend({
   name: 'MetricsView',
@@ -119,14 +191,118 @@ export default Vue.extend({
     fileSizeAllTags: undefined as unknown as { [key: string]: number | undefined } | undefined,
     collections: undefined as unknown as MetricDto,
     readlists: undefined as unknown as MetricDto,
+    taskItems: [] as TaskDto[],
+    taskTotalElements: 0,
+    taskLoading: false,
+    taskOptions: {
+      page: 1,
+      itemsPerPage: 10,
+      sortBy: ['priority'],
+      sortDesc: [true],
+    } as any,
+    taskFilterStatus: null as TaskStatus | null,
+    taskFilterSimpleType: [] as string[],
   }),
-  computed: {},
+  computed: {
+    taskHeaders(): object[] {
+      return [
+        {text: this.$t('metrics.task_type').toString(), value: 'simpleType'},
+        {text: this.$t('metrics.task_status').toString(), value: 'status'},
+        {text: this.$t('metrics.task_owner').toString(), value: 'owner'},
+        {text: this.$t('metrics.task_priority').toString(), value: 'priority'},
+        {text: this.$t('metrics.task_created').toString(), value: 'createdDate'},
+        {text: this.$t('metrics.task_updated').toString(), value: 'lastModifiedDate'},
+        {text: this.$t('metrics.task_duration').toString(), value: 'durationMillis', sortable: false},
+      ]
+    },
+    taskStatusOptions(): { text: string, value: TaskStatus }[] {
+      return [
+        {text: this.$t('metrics.task_status_queued').toString(), value: 'QUEUED'},
+        {text: this.$t('metrics.task_status_running').toString(), value: 'RUNNING'},
+      ]
+    },
+    taskSimpleTypeOptions(): string[] {
+      const items = new Set<string>()
+      Object.keys(this.tasksCount || {}).forEach(x => items.add(x))
+      this.taskItems.forEach(x => items.add(x.simpleType))
+      return [...items].sort()
+    },
+  },
+  watch: {
+    taskOptions: {
+      handler() {
+        this.loadTaskTable()
+      },
+      deep: true,
+    },
+    taskFilterStatus() {
+      this.resetTaskPageAndReload()
+    },
+    taskFilterSimpleType() {
+      this.resetTaskPageAndReload()
+    },
+  },
   mounted() {
     this.loadData()
+    this.loadTaskTable()
   },
   methods: {
     getLibraryNameById(id: string): string {
       return this.$store.getters.getLibraryById(id).name
+    },
+    resetTaskPageAndReload() {
+      if ((this.taskOptions.page || 1) !== 1) {
+        this.taskOptions.page = 1
+      } else {
+        this.loadTaskTable()
+      }
+    },
+    async loadTaskTable() {
+      this.taskLoading = true
+
+      const sortBy = this.taskOptions.sortBy || []
+      const sortDesc = this.taskOptions.sortDesc || []
+      const page = this.taskOptions.page || 1
+      const itemsPerPage = this.taskOptions.itemsPerPage || 10
+
+      const pageRequest = {
+        page: page - 1,
+        size: itemsPerPage,
+        sort: [],
+      } as PageRequest
+
+      for (let i = 0; i < sortBy.length; i++) {
+        pageRequest.sort!!.push(`${sortBy[i]},${sortDesc[i] ? 'desc' : 'asc'}`)
+      }
+
+      try {
+        const taskPage = await this.$komgaTasks.getAll(pageRequest, {
+          status: this.taskFilterStatus || undefined,
+          simpleType: this.taskFilterSimpleType.length ? this.taskFilterSimpleType : undefined,
+        })
+        this.taskItems = taskPage.content
+        this.taskTotalElements = taskPage.totalElements
+      } catch (e) {
+        this.$eventHub.$emit(ERROR, {message: e.message} as ErrorEvent)
+      }
+
+      this.taskLoading = false
+    },
+    formatDateTime(value: string): string {
+      return new Intl.DateTimeFormat(this.$i18n.locale, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(value))
+    },
+    formatDuration(value: number): string {
+      const totalSeconds = Math.max(0, Math.floor(value / 1000))
+      const hours = Math.floor(totalSeconds / 3600)
+      const minutes = Math.floor((totalSeconds % 3600) / 60)
+      const seconds = totalSeconds % 60
+
+      if (hours > 0) return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+      if (minutes > 0) return `${minutes}m ${seconds.toString().padStart(2, '0')}s`
+      return `${seconds}s`
     },
     async loadData() {
       this.$komgaMetrics.getMetric('komga.tasks.execution')

@@ -2,14 +2,19 @@ package org.gotson.komga.infrastructure.jooq.tasks
 
 import org.assertj.core.api.Assertions.assertThat
 import org.gotson.komga.application.tasks.Task
+import org.gotson.komga.interfaces.api.persistence.TaskDtoRepository
+import org.gotson.komga.interfaces.api.rest.dto.TaskStatusDto
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.data.domain.PageRequest
+import org.springframework.data.domain.Sort
 
 @SpringBootTest
 class TasksDaoTest(
   @Autowired private val tasksDao: TasksDao,
+  @Autowired private val taskDtoRepository: TaskDtoRepository,
 ) {
   @AfterEach
   fun cleanup() {
@@ -286,5 +291,70 @@ class TasksDaoTest(
     // then
     assertThat(count).isEqualTo(1)
     assertThat(countByType.values.sum()).isEqualTo(1)
+  }
+
+  @Test
+  fun `given existing tasks when finding paged task dtos then task metadata is returned`() {
+    // given
+    val task1 = Task.AnalyzeBook("book1", 5, "group1")
+    val task2 = Task.ConvertBook("book2", 3, "group2")
+    val task3 = Task.HashBookPages("book3", 1)
+    tasksDao.save(listOf(task1, task2, task3))
+    tasksDao.takeFirst("thread1")
+
+    // when
+    val page = taskDtoRepository.findAll(PageRequest.of(0, 10, Sort.by(Sort.Order.desc("priority"))))
+
+    // then
+    assertThat(page.totalElements).isEqualTo(3)
+    assertThat(page.content).hasSize(3)
+    assertThat(page.content.first())
+      .extracting("id", "simpleType", "status", "owner", "priority", "groupId")
+      .containsExactly(task1.uniqueId, "AnalyzeBook", TaskStatusDto.RUNNING, "thread1", 5, "group1")
+    assertThat(page.content.all { it.durationMillis >= 0L }).isTrue()
+    assertThat(page.content.map { it.status }).contains(TaskStatusDto.QUEUED, TaskStatusDto.RUNNING)
+  }
+
+  @Test
+  fun `given existing tasks when finding paged task dtos sorted by last modified date then sort is applied`() {
+    // given
+    val task1 = Task.HashBookPages("book1", 1)
+    val task2 = Task.HashBookPages("book2", 1)
+    tasksDao.save(task1)
+    tasksDao.save(task2)
+    tasksDao.save(Task.HashBookPages("book1", 5))
+
+    // when
+    val page = taskDtoRepository.findAll(PageRequest.of(0, 10, Sort.by(Sort.Order.desc("lastModifiedDate"))))
+
+    // then
+    assertThat(page.content.first().id).isEqualTo(task1.uniqueId)
+  }
+
+  @Test
+  fun `given existing tasks when filtering paged task dtos by status and simple type then only matching tasks are returned`() {
+    // given
+    tasksDao.save(
+      listOf(
+        Task.AnalyzeBook("book1", 5, "group1"),
+        Task.AnalyzeBook("book2", 3, "group2"),
+        Task.HashBookPages("book3", 1),
+      ),
+    )
+    tasksDao.takeFirst("thread1")
+
+    // when
+    val page =
+      taskDtoRepository.findAll(
+        PageRequest.of(0, 10),
+        setOf(TaskStatusDto.QUEUED),
+        listOf("AnalyzeBook"),
+      )
+
+    // then
+    assertThat(page.totalElements).isEqualTo(1)
+    assertThat(page.content).singleElement()
+      .extracting("simpleType", "status", "owner")
+      .containsExactly("AnalyzeBook", TaskStatusDto.QUEUED, null)
   }
 }

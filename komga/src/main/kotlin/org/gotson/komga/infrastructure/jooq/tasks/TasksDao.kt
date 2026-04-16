@@ -50,32 +50,31 @@ class TasksDao(
       tasksAvailableCondition,
     )
 
-  @Transactional
   override fun takeFirst(owner: String): Task? {
     val record =
       dslRW
         .resultQuery(
           """
           WITH candidate AS (
-            SELECT ID
-            FROM TASK
-            WHERE OWNER IS NULL
+            SELECT "ID"
+            FROM "TASK"
+            WHERE "OWNER" IS NULL
               AND (
-                GROUP_ID IS NULL
-                OR GROUP_ID NOT IN (
-                  SELECT GROUP_ID
-                  FROM TASK
-                  WHERE OWNER IS NOT NULL
-                    AND GROUP_ID IS NOT NULL
+                "GROUP_ID" IS NULL
+                OR "GROUP_ID" NOT IN (
+                  SELECT "GROUP_ID"
+                  FROM "TASK"
+                  WHERE "OWNER" IS NOT NULL
+                    AND "GROUP_ID" IS NOT NULL
                 )
               )
-            ORDER BY PRIORITY DESC, LAST_MODIFIED_DATE
+            ORDER BY "PRIORITY" DESC, "LAST_MODIFIED_DATE"
             LIMIT 1
           )
-          UPDATE TASK
-          SET OWNER = ?
-          WHERE ID = (SELECT ID FROM candidate)
-          RETURNING CLASS, PAYLOAD
+          UPDATE "TASK"
+          SET "OWNER" = ?
+          WHERE "ID" = (SELECT "ID" FROM candidate)
+          RETURNING "CLASS", "PAYLOAD"
           """.trimIndent(),
           owner,
         ).fetchOne()

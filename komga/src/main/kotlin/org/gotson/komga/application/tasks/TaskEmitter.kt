@@ -206,6 +206,15 @@ class TaskEmitter(
     submitTask(Task.RefreshSeriesMetadata(seriesId, priority))
   }
 
+  fun refreshSeriesMetadata(
+    seriesIds: Collection<String>,
+    priority: Int = DEFAULT_PRIORITY,
+  ) {
+    seriesIds
+      .map { Task.RefreshSeriesMetadata(it, priority) }
+      .let { submitTasks(it) }
+  }
+
   fun aggregateSeriesMetadata(
     seriesId: String,
     priority: Int = DEFAULT_PRIORITY,

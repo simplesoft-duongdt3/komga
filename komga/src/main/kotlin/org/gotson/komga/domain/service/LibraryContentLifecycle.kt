@@ -315,8 +315,8 @@ class LibraryContentLifecycle(
           val distinctSeriesToRefresh = seriesToSortAndRefreshList.distinctBy { it.id }
           distinctSeriesToRefresh.forEach {
             seriesLifecycle.sortBooks(it)
-            taskEmitter.refreshSeriesMetadata(it.id)
           }
+          taskEmitter.refreshSeriesMetadata(distinctSeriesToRefresh.map { it.id })
           distinctSeriesToRefresh.size
         }
       metrics.sortAndRefreshMs = sortAndRefreshMs

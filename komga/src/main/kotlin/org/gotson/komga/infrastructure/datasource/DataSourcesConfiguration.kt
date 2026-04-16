@@ -36,10 +36,17 @@ class DataSourcesConfiguration(
   fun tasksDataSourceRW(): DataSource =
     buildDataSource("TasksPoolRW", komgaProperties.tasksDb)
       .apply {
-        // pool size is always 1:
-        // - if there's only 1 pool for read and writes, size should be 1
-        // - if there's a separate read pool, the write pool size should be 1
-        this.maximumPoolSize = 1
+        when (komgaProperties.tasksDb.type) {
+          DatabaseType.SQLITE ->
+            // pool size is 5 to reduce contention while still respecting SQLite's single-writer nature
+            this.maximumPoolSize = 5
+
+          DatabaseType.POSTGRESQL ->
+            if (komgaProperties.tasksDb.poolSize == null && komgaProperties.tasksDb.maxPoolSize == 1) {
+              // for PostgreSQL, if user didn't specify poolSize and maxPoolSize is at default (1), default to something better for tasks
+              this.maximumPoolSize = 10
+            }
+        }
       }
 
   @Bean("tasksDataSourceRO")
@@ -84,7 +91,8 @@ class DataSourcesConfiguration(
     }
     with(databaseProps) {
       journalMode?.let { dataSource.setJournalMode(it.name) }
-      busyTimeout?.let { dataSource.config.busyTimeout = it.toMillis().toInt() }
+      val timeout = busyTimeout?.toMillis()?.toInt() ?: 5000
+      dataSource.config.busyTimeout = timeout
     }
 
     val poolSize =

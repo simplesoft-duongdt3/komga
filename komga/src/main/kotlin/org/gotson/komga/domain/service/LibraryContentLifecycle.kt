@@ -36,12 +36,24 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
+import com.github.benmanes.caffeine.cache.Cache
+import com.github.benmanes.caffeine.cache.Caffeine
 import java.net.URL
 import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.util.UUID
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 
 private val logger = KotlinLogging.logger {}
+
+// Cache for preventing duplicate series creation during concurrent scans
+private val seriesCreationLockCache: Cache<String, Semaphore> =
+  Caffeine
+    .newBuilder()
+    .expireAfterWrite(5, TimeUnit.MINUTES)
+    .maximumSize(10000)
+    .build()
 
 @Service
 class LibraryContentLifecycle(
@@ -232,15 +244,35 @@ class LibraryContentLifecycle(
             val existingSeries = existingActiveSeriesByUrl[newSeries.url]
 
             if (existingSeries == null) {
-              logger.info { "Adding new series: $newSeries" }
-              val createdSeries = seriesLifecycle.createSeries(newSeries)
-              seriesLifecycle.addBooks(createdSeries, newBooks)
-              tryRestoreSeries(createdSeries, newBooks)
-              tryRestoreBooks(newBooks)
-              metrics.createdSeries += 1
-              metrics.addedBooks += newBooks.size
-              seriesToSortAndRefreshList.add(createdSeries)
-              reconciledSeriesByUrl[newSeries.url] = createdSeries
+              val seriesUrl = newSeries.url.toString()
+              val lock = seriesCreationLockCache.get(seriesUrl) { Semaphore(1) }
+
+              val acquired = lock.tryAcquire(100, TimeUnit.MILLISECONDS)
+              if (!acquired) {
+                logger.warn { "Could not acquire lock for series: $seriesUrl, skipping creation" }
+                return@forEach
+              }
+
+              try {
+                val recheck = existingActiveSeriesByUrl[newSeries.url]
+                if (recheck != null) {
+                  logger.debug { "Series already created by another task: $seriesUrl" }
+                  return@forEach
+                }
+
+                logger.info { "Adding new series: $newSeries" }
+                val createdSeries = seriesLifecycle.createSeries(newSeries)
+                seriesLifecycle.addBooks(createdSeries, newBooks)
+                tryRestoreSeries(createdSeries, newBooks)
+                tryRestoreBooks(newBooks)
+                metrics.createdSeries += 1
+                metrics.addedBooks += newBooks.size
+                seriesToSortAndRefreshList.add(createdSeries)
+                reconciledSeriesByUrl[newSeries.url] = createdSeries
+              } finally {
+                lock.release()
+                seriesCreationLockCache.invalidate(seriesUrl)
+              }
             } else {
               logger.debug { "Scanned series already exists. Scanned: $newSeries, Existing: $existingSeries" }
               val seriesChanged = newSeries.fileLastModified.notEquals(existingSeries.fileLastModified) || existingSeries.deletedDate != null || seriesUrlWithDeletedBooks.contains(newSeries.url)

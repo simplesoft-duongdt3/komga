@@ -169,16 +169,18 @@ class TaskEmitter(
     bookId: String,
     priority: Int = DEFAULT_PRIORITY,
   ) {
-    submitTask(Task.GenerateBookThumbnail(bookId, priority))
+    // TODO: TEMPORARILY DISABLED - no-op
+    // submitTask(Task.GenerateBookThumbnail(bookId, priority))
   }
 
   fun generateBookThumbnail(
     bookIds: Collection<String>,
     priority: Int = DEFAULT_PRIORITY,
   ) {
-    bookIds
-      .map { Task.GenerateBookThumbnail(it, priority) }
-      .let { submitTasks(it) }
+    // TODO: TEMPORARILY DISABLED - no-op
+    // bookIds
+    //   .map { Task.GenerateBookThumbnail(it, priority) }
+    //   .let { submitTasks(it) }
   }
 
   fun refreshBookMetadata(

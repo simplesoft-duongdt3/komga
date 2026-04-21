@@ -1,0 +1,17 @@
+curl 'https://thuvien-2026.tiemchuduong.com/api/v1/series/list?page=0&size=1000&sort=metadata.titleSort%2Casc' \
+  -H 'accept: application/json, text/plain, */*' \
+  -H 'accept-language: en-US,en;q=0.9,vi;q=0.8' \
+  -H 'content-type: application/json' \
+  -b 'rl_anonymous_id=RudderEncrypt%3AU2FsdGVkX1%2Bx7R8GRKhs1g5qSXpiNpA3eRNlB3%2FLZYj5v6sCsspckOXcN7nQveBncz0yu9xSDruRjwu2c%2BtMtQ%3D%3D; rl_page_init_referrer=RudderEncrypt%3AU2FsdGVkX1%2BWaSMHa612xkki8eAXPOjyCOASll8Krd0%3D; rl_page_init_referring_domain=RudderEncrypt%3AU2FsdGVkX1%2FOwGyCPODvdVa8vDMPss7JlMlR7T3itbI%3D; rl_session=RudderEncrypt%3AU2FsdGVkX1%2FAT%2FNcQd1fME%2BHMRu1rR46Pk053Px%2Bgt1pQxvJeKZXreG%2B4g4%2FDXgDENNUE4B7wT5DmlX02inaXGA5mjSaK%2FFRKy5%2BWNCr9H9OTqIrZ%2B5Bse7KcCdpYQTIuu51byNk9qCzC9aFNY4zHg%3D%3D; komga-remember-me=ZG9hbnRoYW5oZHVvbmcxMTAzMTk5MCU0MGdtYWlsLmNvbToxODA3ODkzODE1MzUwOlNIQTI1NjoxNGMwZDZhZjY3ZjQ3Y2Q1ODQ1ZjQzNDBhZGVmMjhmMjA3NDMwYzFiZWI0YzAzODExYWViNjhkOGQ4MTUxMjIz; KOMGA-SESSION=NTUxNzhiMTEtNTdjNi00ZGEzLWFiMGItMGVjMzEzZmNlNDEz' \
+  -H 'origin: https://thuvien-2026.tiemchuduong.com' \
+  -H 'priority: u=1, i' \
+  -H 'referer: https://thuvien-2026.tiemchuduong.com/libraries/0Q3CKC76902B7/series' \
+  -H 'sec-ch-ua: "Google Chrome";v="147", "Not.A/Brand";v="8", "Chromium";v="147"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "macOS"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw '{"condition":{"allOf":[{"libraryId":{"operator":"is","value":"0Q3CKC76902B7"}},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]},{"anyOf":[]}]}}'

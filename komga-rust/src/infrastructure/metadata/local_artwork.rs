@@ -62,16 +62,17 @@ impl LocalArtwork {
         
         if let Ok(entries) = fs::read_dir(series_path) {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(name) = path.file_name() {
+                let file_path = entry.path();
+                if file_path.is_file() {
+                    if let Some(name) = file_path.file_name() {
                         let name_str = name.to_string_lossy().to_lowercase();
                         if name_str.starts_with("cover.") 
                             || name_str.starts_with("folder.")
                             || name_str.starts_with("poster.") {
+                            let file_name = name.to_string_lossy().to_string();
                             return Some(LocalArtworkFile {
-                                path,
-                                file_name: name.to_string_lossy().to_string(),
+                                path: file_path,
+                                file_name,
                             });
                         }
                     }
@@ -92,9 +93,11 @@ impl LocalArtwork {
                     let ext_lower = ext.to_string_lossy().to_lowercase();
                     if ["jpg", "jpeg", "png", "webp", "gif"].contains(&ext_lower.as_str()) {
                         if let Some(name) = path.file_name() {
+                            let file_name = name.to_string_lossy().to_string();
+                            let path_buf = path.to_path_buf();
                             images.push(LocalArtworkFile {
-                                path: path.to_path_buf(),
-                                file_name: name.to_string_lossy().to_string(),
+                                path: path_buf,
+                                file_name,
                             });
                         }
                     }

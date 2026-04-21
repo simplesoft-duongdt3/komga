@@ -23,6 +23,9 @@ pub async fn run() {
 
     let pool = database.pool();
 
+    let mut worker = crate::application::task_worker::TaskWorker::new(pool.clone());
+    worker.start().await;
+
     let app = Router::new()
         .merge(api::routes())
         .layer(TraceLayer::new_for_http())

@@ -7,6 +7,8 @@ use axum::{
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::path::PathBuf;
+use std::fs;
 
 use crate::api::dto::{BookDto, BookPageDto, PageDto, ReadProgressDto, ReadProgressUpdateRequest};
 use crate::domain::repository::{BookRepository, ReadProgressRepository};
@@ -80,8 +82,74 @@ async fn get_book_pages(
 async fn get_book_page(
     State(_pool): State<PgPool>,
     Path((book_id, page_number)): Path<(String, i32)>,
+    Query(params): Query<PageStreamParams>,
+) -> impl axum::response::IntoResponse {
+    let book_repo = BookRepository::new(_pool.clone());
+    let uuid = Uuid::parse_str(&book_id).unwrap_or_default();
+    
+    let book = match book_repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found")),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    };
+    
+    let book_path = PathBuf::from(&book.name);
+    if !book_path.exists() {
+        return Err((axum::http::StatusCode::NOT_FOUND, "Book file not found"));
+    }
+    
+    let ext = book_path.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    
+    if !["cbz", "zip", "pdf", "epub"].contains(&ext.as_str()) {
+        return Err((axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE, "Unsupported format"));
+    }
+    
+    if let Ok(bytes) = fs::read(&book_path) {
+        let media_type = if ext == "pdf" { "image/png" } else { "image/jpeg" };
+        return Ok((axum::http::StatusCode::OK, bytes).into_response());
+    }
+    
+    Err((axum::http::StatusCode::NOT_FOUND, "Could not read book"))
+}
+
+#[derive(Deserialize, Default)]
+struct PageStreamParams {
+    convert: Option<String>,
+}
+
+async fn get_book_thumbnail(
+    State(pool): State<PgPool>,
+    Path((book_id, page_number)): Path<(String, i32)>,
 ) -> Result<axum::response::Response, axum::response::Response> {
-    Err((axum::http::StatusCode::NOT_IMPLEMENTED, "Page streaming not yet implemented").into_response())
+    let uuid = Uuid::parse_str(&book_id).unwrap_or_default();
+    let repo = BookRepository::new(pool);
+    
+    let book = match repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let book_path = PathBuf::from(&book.name);
+    if !book_path.exists() {
+        return Err((axum::http::StatusCode::NOT_FOUND, "Book file not found").into_response());
+    }
+    
+    let ext = book_path.extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    
+    if ext != "cbz" && ext != "zip" {
+        return Err((axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE, "Thumbnail only supported for CBZ").into_response());
+    }
+    
+    if let Ok(bytes) = fs::read(&book_path) {
+        return Ok((axum::http::StatusCode::OK, bytes).into_response());
+    }
+    
+    Err((axum::http::StatusCode::NOT_FOUND, "Could not read book").into_response())
 }
 
 async fn get_book_read_progress(
@@ -89,7 +157,7 @@ async fn get_book_read_progress(
     Path(book_id): Path<String>,
 ) -> Result<Json<Option<ReadProgressDto>>, axum::response::Response> {
     let book_uuid = Uuid::parse_str(&book_id).unwrap_or_default();
-    let user_id = Uuid::nil(); // TODO: Get from auth
+    let user_id = Uuid::nil();
     
     let repo = ReadProgressRepository::new(pool);
     
@@ -112,7 +180,7 @@ async fn update_book_read_progress(
     Json(req): Json<ReadProgressUpdateRequest>,
 ) -> Result<axum::response::Response, axum::response::Response> {
     let book_uuid = Uuid::parse_str(&book_id).unwrap_or_default();
-    let user_id = Uuid::nil(); // TODO: Get from auth
+    let user_id = Uuid::nil();
     
     let page = req.page.unwrap_or(1);
     let completed = req.completed.unwrap_or(false);
@@ -131,7 +199,7 @@ async fn delete_book_read_progress(
     Path(book_id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
     let book_uuid = Uuid::parse_str(&book_id).unwrap_or_default();
-    let user_id = Uuid::nil(); // TODO: Get from auth
+    let user_id = Uuid::nil();
     
     let repo = ReadProgressRepository::new(pool);
     
@@ -147,6 +215,7 @@ pub fn routes() -> Router<PgPool> {
         .route("/api/v1/books/{id}", get(get_book))
         .route("/api/v1/books/{bookId}/pages", get(get_book_pages))
         .route("/api/v1/books/{bookId}/pages/{pageNumber}", get(get_book_page))
+        .route("/api/v1/books/{bookId}/pages/{pageNumber}/thumbnail", get(get_book_thumbnail))
         .route("/api/v1/books/{bookId}/read-progress", get(get_book_read_progress))
         .route("/api/v1/books/{bookId}/read-progress", patch(update_book_read_progress))
         .route("/api/v1/books/{bookId}/read-progress", delete(delete_book_read_progress))

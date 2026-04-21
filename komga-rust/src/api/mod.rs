@@ -10,6 +10,9 @@ pub fn routes() -> Router<PgPool> {
         .merge(series::routes())
         .merge(book::routes())
         .merge(search::routes())
+        .merge(readlist::routes())
+        .merge(collection::routes())
+        .merge(task::routes())
 }
 
 mod auth;
@@ -17,3 +20,6 @@ mod library;
 mod series;
 mod book;
 mod search;
+mod readlist;
+mod collection;
+mod task;

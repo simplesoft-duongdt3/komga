@@ -188,3 +188,109 @@ pub struct ReadProgressUpdateRequest {
     pub page: Option<i32>,
     pub completed: Option<bool>,
 }
+
+use crate::domain::model::{ReadList, Collection};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadListDto {
+    pub id: String,
+    pub name: String,
+    pub book_count: i32,
+    pub summary: String,
+    pub ordered: bool,
+}
+
+impl From<ReadList> for ReadListDto {
+    fn from(r: ReadList) -> Self {
+        Self {
+            id: r.id.to_string(),
+            name: r.name,
+            book_count: r.book_count,
+            summary: r.summary,
+            ordered: r.ordered,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReadListPageDto {
+    pub content: Vec<ReadListDto>,
+    pub total_elements: usize,
+    pub total_pages: usize,
+    pub number: usize,
+    pub size: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateReadListRequest {
+    pub name: String,
+    pub summary: Option<String>,
+    pub ordered: Option<bool>,
+    pub book_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateReadListRequest {
+    pub name: Option<String>,
+    pub summary: Option<String>,
+    pub ordered: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionDto {
+    pub id: String,
+    pub name: String,
+    pub ordered: bool,
+    pub series_count: i32,
+}
+
+impl From<Collection> for CollectionDto {
+    fn from(c: Collection) -> Self {
+        Self {
+            id: c.id.to_string(),
+            name: c.name,
+            ordered: c.ordered,
+            series_count: c.series_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionPageDto {
+    pub content: Vec<CollectionDto>,
+    pub total_elements: usize,
+    pub total_pages: usize,
+    pub number: usize,
+    pub size: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    pub ordered: Option<bool>,
+    pub series_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateCollectionRequest {
+    pub name: Option<String>,
+    pub ordered: Option<bool>,
+    pub series_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskDto {
+    pub id: String,
+    pub task_type: String,
+    pub status: String,
+    pub priority: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskPageDto {
+    pub content: Vec<TaskDto>,
+    pub total_elements: usize,
+    pub total_pages: usize,
+    pub number: usize,
+    pub size: usize,
+}

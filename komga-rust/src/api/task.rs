@@ -1,13 +1,16 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::get,
+    routing::{get, delete},
     Router, Json,
     response::IntoResponse,
 };
 use serde::Deserialize;
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::api::dto::{TaskDto, TaskPageDto};
+use crate::domain::model::task::TaskStatus;
+use crate::domain::repository::TaskRepository;
 
 #[derive(Deserialize)]
 struct TaskParams {
@@ -24,27 +27,63 @@ fn default_size() -> usize { 20 }
 fn default_status() -> Option<String> { None }
 
 async fn get_tasks(
-    State(_pool): State<PgPool>,
-    Query(_params): Query<TaskParams>,
+    State(pool): State<PgPool>,
+    Query(params): Query<TaskParams>,
 ) -> Result<Json<TaskPageDto>, axum::response::Response> {
-    Ok(Json(TaskPageDto {
-        content: vec![],
-        total_elements: 0,
-        total_pages: 0,
-        number: 0,
-        size: 0,
-    }))
+    let repo = TaskRepository::new(pool);
+    let status = params.status.as_deref();
+    let size = params.size.max(1);
+    
+    match repo.find_all(status, size).await {
+        Ok(tasks) => {
+            let total = tasks.len();
+            let task_dtos: Vec<TaskDto> = tasks.into_iter().map(|t| t.into()).collect();
+            Ok(Json(TaskPageDto {
+                content: task_dtos,
+                total_elements: total,
+                total_pages: total / size,
+                number: params.page,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 async fn get_task(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<Json<TaskDto>, axum::response::Response> {
-    Err((axum::http::StatusCode::NOT_FOUND, "Task not implemented yet").into_response())
+    let repo = TaskRepository::new(pool);
+    
+    match repo.find_by_id(&id).await {
+        Ok(Some(task)) => Ok(Json(task.into())),
+        Ok(None) => Err((axum::http::StatusCode::NOT_FOUND, "Task not found").into_response()),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+async fn delete_task(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let repo = TaskRepository::new(pool);
+    
+    match repo.find_by_id(&id).await {
+        Ok(Some(_task)) => {
+            if let Err(e) = repo.update_status(&id, &TaskStatus::Cancelled).await {
+                return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+            }
+            Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+        }
+        Ok(None) => Err((axum::http::StatusCode::NOT_FOUND, "Task not found").into_response()),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/tasks", get(get_tasks))
         .route("/api/v1/tasks/{id}", get(get_task))
+        .route("/api/v1/tasks/{id}", delete(delete_task))
 }

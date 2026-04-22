@@ -15,6 +15,8 @@ pub struct Series {
     pub deleted_date: Option<DateTime<Utc>>,
     pub oneshot: bool,
     pub metadata: Option<SeriesMetadata>,
+    #[serde(default)]
+    pub cover_file_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -79,6 +81,7 @@ impl Series {
             deleted_date: None,
             oneshot: false,
             metadata: None,
+            cover_file_name: None,
         }
     }
 }

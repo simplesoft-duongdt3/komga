@@ -20,6 +20,8 @@ pub struct Book {
     pub file_hash_koreader: String,
     pub metadata: Option<BookMetadata>,
     pub media: Option<Media>,
+    #[serde(default)]
+    pub cover_file_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +122,7 @@ impl Book {
             file_hash_koreader: String::new(),
             metadata: None,
             media: None,
+            cover_file_name: None,
         }
     }
 }

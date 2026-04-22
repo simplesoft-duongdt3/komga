@@ -13,13 +13,15 @@ pub fn routes() -> Router<PgPool> {
         .merge(readlist::routes())
         .merge(collection::routes())
         .merge(task::routes())
+        .merge(apikey::routes())
 }
 
-mod auth;
-mod library;
-mod series;
-mod book;
-mod search;
-mod readlist;
-mod collection;
-mod task;
+pub mod auth;
+pub mod library;
+pub mod series;
+pub mod book;
+pub mod search;
+pub mod readlist;
+pub mod collection;
+pub mod task;
+pub mod apikey;

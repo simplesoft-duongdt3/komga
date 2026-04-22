@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 use crate::api::dto::LibraryDto;
 use crate::domain::model::library::Library;
+use crate::domain::model::task::{Task, TaskData, TaskType};
+use crate::domain::repository::TaskRepository;
 
 async fn get_all_libraries(
     State(pool): State<PgPool>,
@@ -58,10 +60,40 @@ async fn delete_library(
     }
 }
 
+async fn scan_library(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<Json<String>, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = crate::domain::repository::LibraryRepository::new(pool.clone());
+    
+    let _library = match repo.find_by_id(uuid).await {
+        Ok(Some(l)) => l,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Library not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let task = Task::new(
+        TaskType::ScanLibrary,
+        TaskData::ScanLibrary { 
+            library_id: id.clone(), 
+            scan_deep: false 
+        },
+        4,
+    );
+    let task_repo = TaskRepository::new(pool.clone());
+    if let Err(e) = task_repo.create(&task).await {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    
+    Ok(Json(format!("Scan started for library: {}", id)))
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/libraries", get(get_all_libraries))
         .route("/api/v1/libraries", post(create_library))
         .route("/api/v1/libraries/{id}", get(get_library))
         .route("/api/v1/libraries/{id}", delete(delete_library))
+        .route("/api/v1/libraries/{id}/scan", post(scan_library))
 }

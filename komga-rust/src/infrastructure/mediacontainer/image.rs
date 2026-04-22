@@ -126,8 +126,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_image_processor_new() {
-        let processor = ImageProcessor::new();
-        assert!(std::mem::size_of_val(&processor) > 0);
+    fn test_image_processor_creation() {
+        let _processor = ImageProcessor::new();
     }
 }

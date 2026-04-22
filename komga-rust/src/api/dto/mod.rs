@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
-use crate::domain::model::{Library, Series, Book};
+use crate::domain::model::{Book, Library, Series};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginRequest {
@@ -116,6 +116,36 @@ impl From<Series> for SeriesDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SeriesMetadataDto {
+    pub status: Option<String>,
+    pub title: Option<String>,
+    pub title_sort: Option<String>,
+    pub publisher: Option<String>,
+    pub reading_direction: Option<String>,
+    pub age_rating: Option<i32>,
+    pub summary: Option<String>,
+    pub language: Option<String>,
+    pub genres: Option<Vec<String>>,
+    pub tags: Option<Vec<String>>,
+    pub total_book_count: Option<i32>,
+    pub sharing_labels: Option<Vec<String>>,
+    pub links: Option<Vec<MetadataLinkDto>>,
+    pub alternate_titles: Option<Vec<AlternateTitleDto>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataLinkDto {
+    pub label: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlternateTitleDto {
+    pub label: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeriesPageDto {
     pub content: Vec<SeriesDto>,
     pub total_elements: usize,
@@ -189,7 +219,7 @@ pub struct ReadProgressUpdateRequest {
     pub completed: Option<bool>,
 }
 
-use crate::domain::model::{ReadList, Collection};
+use crate::domain::model::{Collection, ReadList};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReadListDto {
@@ -284,6 +314,27 @@ pub struct TaskDto {
     pub task_type: String,
     pub status: String,
     pub priority: i32,
+    pub created_date: String,
+    pub scheduled_date: Option<String>,
+    pub execution_start_date: Option<String>,
+    pub execution_end_date: Option<String>,
+}
+
+use crate::domain::model::Task;
+
+impl From<Task> for TaskDto {
+    fn from(t: Task) -> Self {
+        Self {
+            id: t.id,
+            task_type: format!("{:?}", t.task_type),
+            status: format!("{:?}", t.status),
+            priority: t.priority,
+            created_date: t.created_date.to_rfc3339(),
+            scheduled_date: t.scheduled_date.map(|d| d.to_rfc3339()),
+            execution_start_date: t.execution_start_date.map(|d| d.to_rfc3339()),
+            execution_end_date: t.execution_end_date.map(|d| d.to_rfc3339()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,4 +344,27 @@ pub struct TaskPageDto {
     pub total_pages: usize,
     pub number: usize,
     pub size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyDto {
+    pub id: String,
+    pub name: String,
+    pub key: String,
+    pub created_date: String,
+    pub last_used_date: Option<String>,
+}
+
+use crate::domain::model::user::ApiKey;
+
+impl From<ApiKey> for ApiKeyDto {
+    fn from(k: ApiKey) -> Self {
+        Self {
+            id: k.id,
+            name: k.name,
+            key: k.key,
+            created_date: k.created_date.to_rfc3339(),
+            last_used_date: k.last_used_date.map(|d| d.to_rfc3339()),
+        }
+    }
 }

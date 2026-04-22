@@ -1,6 +1,6 @@
 use axum::{
-    extract::{Path, Query, State},
-    routing::{get, patch, delete},
+    extract::{Path, Query, State, Multipart},
+    routing::{get, patch, delete, put},
     Router, Json,
     response::IntoResponse,
 };
@@ -282,6 +282,113 @@ async fn delete_book_read_progress(
     }
 }
 
+async fn get_book_cover(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = BookRepository::new(pool);
+    
+    let book = match repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let cover_path = book.cover_file_name
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+    
+    match cover_path {
+        Some(path) => {
+            let data = match fs::read(&path) {
+                Ok(d) => d,
+                Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+            };
+            let media_type = path.extension()
+                .map(|e| match e.to_string_lossy().to_lowercase().as_str() {
+                    "png" => "image/png",
+                    "gif" => "image/gif",
+                    "webp" => "image/webp",
+                    _ => "image/jpeg",
+                })
+                .unwrap_or("image/jpeg");
+            Ok((axum::http::StatusCode::OK, [(axum::http::header::CONTENT_TYPE, media_type)], data).into_response())
+        }
+        None => Err((axum::http::StatusCode::NOT_FOUND, "Cover not found").into_response()),
+    }
+}
+
+async fn upload_book_cover(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+    mut multipart: Multipart,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = BookRepository::new(pool.clone());
+    
+    let book = match repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let field = match multipart.next_field().await {
+        Ok(Some(f)) => f,
+        Ok(None) => return Err((axum::http::StatusCode::BAD_REQUEST, "No file provided").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let bytes = match field.bytes().await {
+        Ok(b) => b,
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let covers_dir = std::env::current_dir().unwrap_or_default().join("covers");
+    if let Err(e) = fs::create_dir_all(&covers_dir) {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    
+    let cover_path = covers_dir.join(format!("{}.jpg", book.id));
+    if let Err(e) = fs::write(&cover_path, &bytes) {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    
+    let repo = BookRepository::new(pool.clone());
+    if let Err(e) = repo.update_cover(&uuid, cover_path.to_string_lossy().to_string()).await {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
+async fn delete_book_cover(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = BookRepository::new(pool);
+    
+    let book = match repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    if let Some(cover_path) = book.cover_file_name {
+        let path = PathBuf::from(cover_path);
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+    
+    if let Err(e) = repo.update_cover(&uuid, String::new()).await {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/series/{seriesId}/books", get(get_books_by_series))
@@ -292,4 +399,7 @@ pub fn routes() -> Router<PgPool> {
         .route("/api/v1/books/{bookId}/read-progress", get(get_book_read_progress))
         .route("/api/v1/books/{bookId}/read-progress", patch(update_book_read_progress))
         .route("/api/v1/books/{bookId}/read-progress", delete(delete_book_read_progress))
+        .route("/api/v1/books/{id}/cover", get(get_book_cover))
+        .route("/api/v1/books/{id}/cover", put(upload_book_cover))
+        .route("/api/v1/books/{id}/cover", delete(delete_book_cover))
 }

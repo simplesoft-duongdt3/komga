@@ -35,9 +35,11 @@ pdf = "0.9"
 walkdir = "2"
 quick-xml = "0.37"
 serde-xml-rs = "0.8"
+sha2 = "0.10"
 
 [dev-dependencies]
 http-body-util = "0.1"
+tower = { version = "0.4", features = ["util"] }
 
 [lib]
 name = "komga_rust"

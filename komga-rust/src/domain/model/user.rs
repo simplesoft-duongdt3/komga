@@ -42,7 +42,11 @@ impl User {
 
     pub fn new_admin(email: String, password: String) -> Self {
         let mut user = Self::new(email, password);
-        user.roles = vec![UserRole::Admin, UserRole::PageViewer, UserRole::BookDownload];
+        user.roles = vec![
+            UserRole::Admin,
+            UserRole::PageViewer,
+            UserRole::BookDownload,
+        ];
         user
     }
 }
@@ -72,6 +76,31 @@ impl JwtClaims {
             sub: user_id.to_string(),
             email,
             exp: expires_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKey {
+    pub id: String,
+    pub user_id: Uuid,
+    pub name: String,
+    pub key: String,
+    pub created_date: DateTime<Utc>,
+    pub last_used_date: Option<DateTime<Utc>>,
+}
+
+impl ApiKey {
+    pub fn new(user_id: Uuid, name: String) -> Self {
+        let now = Utc::now();
+        let key = Uuid::new_v4().to_string().replace("-", "");
+        Self {
+            id: Uuid::new_v4().to_string(),
+            user_id,
+            name,
+            key,
+            created_date: now,
+            last_used_date: None,
         }
     }
 }

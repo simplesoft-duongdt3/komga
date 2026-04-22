@@ -6,6 +6,7 @@ pub mod read_progress_repository;
 pub mod readlist_repository;
 pub mod collection_repository;
 pub mod task_repository;
+pub mod api_key_repository;
 
 pub use user_repository::UserRepository;
 pub use library_repository::LibraryRepository;
@@ -15,3 +16,4 @@ pub use read_progress_repository::ReadProgressRepository;
 pub use readlist_repository::ReadListRepository;
 pub use collection_repository::CollectionRepository;
 pub use task_repository::TaskRepository;
+pub use api_key_repository::ApiKeyRepository;

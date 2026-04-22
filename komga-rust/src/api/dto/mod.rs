@@ -146,6 +146,25 @@ pub struct AlternateTitleDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BookMetadataDto {
+    pub number: Option<String>,
+    pub number_sort: Option<f32>,
+    pub release_date: Option<String>,
+    pub summary: Option<String>,
+    pub title: Option<String>,
+    pub authors: Option<Vec<AuthorDto>>,
+    pub tags: Option<Vec<String>>,
+    pub isbn: Option<String>,
+    pub links: Option<Vec<MetadataLinkDto>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthorDto {
+    pub name: String,
+    pub role: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeriesPageDto {
     pub content: Vec<SeriesDto>,
     pub total_elements: usize,

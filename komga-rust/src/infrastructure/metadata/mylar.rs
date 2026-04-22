@@ -47,27 +47,27 @@ impl MylarProvider {
 
     pub fn get_series_metadata(&self, series_path: &Path) -> Option<MylarMetadataResult> {
         let series_json_path = series_path.join("series.json");
-        
+
         if !series_json_path.exists() {
             return None;
         }
-        
+
         let content = fs::read_to_string(&series_json_path).ok()?;
         let mylar: MylarSeries = serde_json::from_str(&content).ok()?;
         let meta = mylar.metadata;
-        
+
         let title = if meta.volume == Some(1) || meta.volume.is_none() {
             meta.name.clone()
         } else {
             let year_str = meta.year.map(|y| format!(" ({})", y)).unwrap_or_default();
             format!("{}{}", meta.name, year_str)
         };
-        
+
         let status = match meta.status.as_deref() {
             Some("Ended") => "ENDED".to_string(),
             Some("Continuing") | _ => "ONGOING".to_string(),
         };
-        
+
         Some(MylarMetadataResult {
             title: title.clone(),
             title_sort: title,

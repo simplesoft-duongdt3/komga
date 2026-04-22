@@ -8,6 +8,7 @@ use std::str::FromStr;
 
 use axum::Router;
 use tower_http::trace::TraceLayer;
+use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::infrastructure::db::Database;
@@ -26,8 +27,15 @@ pub async fn run() {
     let mut worker = crate::application::task_worker::TaskWorker::new(pool.clone());
     worker.start().await;
 
+    let webui_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join("webui-dist");
+    
+    tracing::info!("Serving webui from: {:?}", webui_path);
+    
     let app = Router::new()
         .merge(api::routes())
+        .nest_service("/ui", ServeDir::new(&webui_path))
         .layer(TraceLayer::new_for_http())
         .with_state(pool);
 

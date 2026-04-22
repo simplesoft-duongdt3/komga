@@ -170,6 +170,91 @@ async fn delete_series_cover(
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
+async fn update_series_metadata(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+    Json(req): Json<SeriesMetadataDto>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = SeriesRepository::new(pool.clone());
+    
+    let series = match repo.find_by_id(uuid).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Series not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let now = chrono::Utc::now();
+    let mut metadata = series.metadata.unwrap_or(SeriesMetadata {
+        created_date: now,
+        last_modified_date: now,
+        status: "OK".to_string(),
+        status_lock: false,
+        title: series.name.clone(),
+        title_lock: false,
+        title_sort: String::new(),
+        title_sort_lock: false,
+        series_id: uuid,
+        publisher: String::new(),
+        publisher_lock: false,
+        reading_direction: None,
+        reading_direction_lock: false,
+        age_rating: None,
+        age_rating_lock: false,
+        summary: String::new(),
+        summary_lock: false,
+        language: "en".to_string(),
+        language_lock: false,
+        genres: vec![],
+        genres_lock: false,
+        tags: vec![],
+        tags_lock: false,
+        total_book_count: None,
+        total_book_count_lock: false,
+        sharing_labels: vec![],
+        sharing_labels_lock: false,
+        links: vec![],
+        links_lock: false,
+        alternate_titles: vec![],
+        alternate_titles_lock: false,
+    });
+    
+    metadata.last_modified_date = now;
+    
+    if let Some(title) = req.title {
+        metadata.title = title;
+    }
+    if let Some(title_sort) = req.title_sort {
+        metadata.title_sort = title_sort;
+    }
+    if let Some(publisher) = req.publisher {
+        metadata.publisher = publisher;
+    }
+    if let Some(reading_direction) = req.reading_direction {
+        metadata.reading_direction = Some(reading_direction);
+    }
+    if let Some(age_rating) = req.age_rating {
+        metadata.age_rating = Some(age_rating);
+    }
+    if let Some(summary) = req.summary {
+        metadata.summary = summary;
+    }
+    if let Some(language) = req.language {
+        metadata.language = language;
+    }
+    if let Some(genres) = req.genres {
+        metadata.genres = genres;
+    }
+    if let Some(tags) = req.tags {
+        metadata.tags = tags;
+    }
+    
+    repo.update_metadata(&uuid, &metadata).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/libraries/{libraryId}/series", get(get_series_by_library))
@@ -177,4 +262,5 @@ pub fn routes() -> Router<PgPool> {
         .route("/api/v1/series/{id}/cover", get(get_series_cover))
         .route("/api/v1/series/{id}/cover", put(upload_series_cover))
         .route("/api/v1/series/{id}/cover", delete(delete_series_cover))
+        .route("/api/v1/series/{id}/metadata", patch(update_series_metadata))
 }

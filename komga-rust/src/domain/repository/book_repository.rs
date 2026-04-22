@@ -3,7 +3,7 @@ use sqlx::Row;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::domain::model::book::Book;
+use crate::domain::model::book::{Book, BookMetadata};
 
 pub struct BookRepository {
     pool: PgPool,
@@ -187,6 +187,42 @@ impl BookRepository {
         .bind(cover_path)
         .bind(Utc::now())
         .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_metadata(&self, id: &Uuid, metadata: &BookMetadata) -> Result<(), sqlx::Error> {
+        let metadata_json = serde_json::to_string(metadata).unwrap_or_default();
+        sqlx::query(
+            r#"INSERT INTO "BOOK_METADATA" ("ID", "BOOK_ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "NUMBER", "NUMBER_LOCK", "NUMBER_SORT", "NUMBER_SORT_LOCK", "RELEASE_DATE", "RELEASE_DATE_LOCK", "SUMMARY", "SUMMARY_LOCK", "TITLE", "TITLE_LOCK", "AUTHORS", "AUTHORS_LOCK", "TAGS", "TAGS_LOCK", "ISBN", "ISBN_LOCK", "LINKS", "LINKS_LOCK", "METADATA_JSON")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+            ON CONFLICT ("BOOK_ID") DO UPDATE SET "LAST_MODIFIED_DATE" = $4, "NUMBER" = $5, "NUMBER_SORT" = $7, "SUMMARY" = $11, "TITLE" = $13, "AUTHORS" = $15, "TAGS" = $17, "ISBN" = $19, "LINKS" = $21, "METADATA_JSON" = $23"#
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(id.to_string())
+        .bind(metadata.created_date)
+        .bind(metadata.last_modified_date)
+        .bind(&metadata.number)
+        .bind(metadata.number_lock)
+        .bind(metadata.number_sort)
+        .bind(metadata.number_sort_lock)
+        .bind(metadata.release_date)
+        .bind(metadata.release_date_lock)
+        .bind(&metadata.summary)
+        .bind(metadata.summary_lock)
+        .bind(&metadata.title)
+        .bind(metadata.title_lock)
+        .bind(serde_json::to_string(&metadata.authors).unwrap_or("[]".to_string()))
+        .bind(metadata.authors_lock)
+        .bind(serde_json::to_string(&metadata.tags).unwrap_or("[]".to_string()))
+        .bind(metadata.tags_lock)
+        .bind(&metadata.isbn)
+        .bind(metadata.isbn_lock)
+        .bind(serde_json::to_string(&metadata.links).unwrap_or("[]".to_string()))
+        .bind(metadata.links_lock)
+        .bind(&metadata_json)
         .execute(&self.pool)
         .await?;
 

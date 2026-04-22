@@ -10,9 +10,10 @@ use uuid::Uuid;
 use std::path::PathBuf;
 use std::fs;
 
-use crate::api::dto::{BookDto, BookPageDto, PageDto, ReadProgressDto, ReadProgressUpdateRequest};
+use crate::api::dto::{BookDto, BookPageDto, PageDto, ReadProgressDto, ReadProgressUpdateRequest, BookMetadataDto};
 use crate::domain::repository::{BookRepository, ReadProgressRepository};
 use crate::domain::model::read_progress::ReadProgress;
+use crate::domain::model::book::BookMetadata;
 use crate::infrastructure::mediacontainer::{cbz::CbzExtractor, epub::EpubExtractor, pdf::PdfExtractor, BookExtractor};
 use crate::infrastructure::mediacontainer::image::ImageProcessor;
 
@@ -389,6 +390,78 @@ async fn delete_book_cover(
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
+async fn update_book_metadata(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+    Json(req): Json<BookMetadataDto>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = BookRepository::new(pool.clone());
+    
+    let book = match repo.find_by_id(uuid).await {
+        Ok(Some(b)) => b,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Book not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let now = chrono::Utc::now();
+    let mut metadata = book.metadata.unwrap_or(BookMetadata {
+        created_date: now,
+        last_modified_date: now,
+        number: String::new(),
+        number_lock: false,
+        number_sort: 0.0,
+        number_sort_lock: false,
+        release_date: None,
+        release_date_lock: false,
+        summary: String::new(),
+        summary_lock: false,
+        title: book.name.clone(),
+        title_lock: false,
+        authors: vec![],
+        authors_lock: false,
+        tags: vec![],
+        tags_lock: false,
+        book_id: uuid,
+        isbn: String::new(),
+        isbn_lock: false,
+        links: vec![],
+        links_lock: false,
+    });
+    
+    metadata.last_modified_date = now;
+    
+    if let Some(number) = req.number {
+        metadata.number = number;
+    }
+    if let Some(number_sort) = req.number_sort {
+        metadata.number_sort = number_sort;
+    }
+    if let Some(summary) = req.summary {
+        metadata.summary = summary;
+    }
+    if let Some(title) = req.title {
+        metadata.title = title;
+    }
+    if let Some(authors) = req.authors {
+        metadata.authors = authors.iter().map(|a| crate::domain::model::book::Author {
+            name: a.name.clone(),
+            role: a.role.clone(),
+        }).collect();
+    }
+    if let Some(tags) = req.tags {
+        metadata.tags = tags;
+    }
+    if let Some(isbn) = req.isbn {
+        metadata.isbn = isbn;
+    }
+    
+    repo.update_metadata(&uuid, &metadata).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/series/{seriesId}/books", get(get_books_by_series))
@@ -402,4 +475,5 @@ pub fn routes() -> Router<PgPool> {
         .route("/api/v1/books/{id}/cover", get(get_book_cover))
         .route("/api/v1/books/{id}/cover", put(upload_book_cover))
         .route("/api/v1/books/{id}/cover", delete(delete_book_cover))
+        .route("/api/v1/books/{id}/metadata", patch(update_book_metadata))
 }

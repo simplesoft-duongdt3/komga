@@ -3,7 +3,7 @@ use sqlx::Row;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
-use crate::domain::model::series::Series;
+use crate::domain::model::series::{Series, SeriesMetadata};
 
 pub struct SeriesRepository {
     pool: PgPool,
@@ -121,6 +121,43 @@ impl SeriesRepository {
         .bind(cover_path)
         .bind(Utc::now())
         .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_metadata(&self, id: &Uuid, metadata: &SeriesMetadata) -> Result<(), sqlx::Error> {
+        let metadata_json = serde_json::to_string(metadata).unwrap_or_default();
+        sqlx::query(
+            r#"INSERT INTO "SERIES_METADATA" ("ID", "SERIES_ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "STATUS", "TITLE", "TITLE_LOCK", "PUBLISHER", "PUBLISHER_LOCK", "SUMMARY", "SUMMARY_LOCK", "GENRES", "GENRES_LOCK", "TAGS", "TAGS_LOCK", "LANGUAGE", "LANGUAGE_LOCK", "AGE_RATING", "AGE_RATING_LOCK", "READING_DIRECTION", "READING_DIRECTION_LOCK", "TOTAL_BOOK_COUNT", "TOTAL_BOOK_COUNT_LOCK", "METADATA_JSON")
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+            ON CONFLICT ("SERIES_ID") DO UPDATE SET "LAST_MODIFIED_DATE" = $4, "STATUS" = $5, "TITLE" = $6, "PUBLISHER" = $8, "SUMMARY" = $10, "GENRES" = $12, "TAGS" = $14, "LANGUAGE" = $16, "AGE_RATING" = $18, "READING_DIRECTION" = $20, "TOTAL_BOOK_COUNT" = $22, "METADATA_JSON" = $24"#
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(id.to_string())
+        .bind(metadata.created_date)
+        .bind(metadata.last_modified_date)
+        .bind(&metadata.status)
+        .bind(&metadata.title)
+        .bind(metadata.title_lock)
+        .bind(&metadata.publisher)
+        .bind(metadata.publisher_lock)
+        .bind(&metadata.summary)
+        .bind(metadata.summary_lock)
+        .bind(serde_json::to_string(&metadata.genres).unwrap_or("[]".to_string()))
+        .bind(metadata.genres_lock)
+        .bind(serde_json::to_string(&metadata.tags).unwrap_or("[]".to_string()))
+        .bind(metadata.tags_lock)
+        .bind(&metadata.language)
+        .bind(metadata.language_lock)
+        .bind(metadata.age_rating)
+        .bind(metadata.age_rating_lock)
+        .bind(&metadata.reading_direction)
+        .bind(metadata.reading_direction_lock)
+        .bind(metadata.total_book_count)
+        .bind(metadata.total_book_count_lock)
+        .bind(&metadata_json)
         .execute(&self.pool)
         .await?;
 

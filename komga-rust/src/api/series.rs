@@ -1,10 +1,10 @@
 use axum::{
     extract::{Path, Query, State, Multipart},
-    routing::{get, put, delete, patch},
+    routing::{get, put, delete, patch, post},
     Router, Json,
     response::IntoResponse,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 use std::path::PathBuf;
@@ -255,12 +255,244 @@ async fn update_series_metadata(
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
+async fn list_series(
+    State(pool): State<PgPool>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<SeriesPageDto>, axum::response::Response> {
+    let repo = SeriesRepository::new(pool);
+    match repo.find_all(params.size, params.page * params.size).await {
+        Ok(series_list) => {
+            let total = series_list.len();
+            Ok(Json(SeriesPageDto {
+                content: series_list.into_iter().map(|s| s.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: params.page,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+#[derive(Deserialize)]
+struct SeriesSearchRequest {
+    #[serde(rename = "fullTextSearch")]
+    full_text_search: Option<String>,
+}
+
+async fn list_series_post(
+    State(pool): State<PgPool>,
+    Query(params): Query<PageParams>,
+    Json(_search): Json<SeriesSearchRequest>,
+) -> Result<Json<SeriesPageDto>, axum::response::Response> {
+    let repo = SeriesRepository::new(pool);
+    match repo.find_all(params.size, params.page * params.size).await {
+        Ok(series_list) => {
+            let total = series_list.len();
+            Ok(Json(SeriesPageDto {
+                content: series_list.into_iter().map(|s| s.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: params.page,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+async fn get_series_latest(
+    State(pool): State<PgPool>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<SeriesPageDto>, axum::response::Response> {
+    let repo = SeriesRepository::new(pool);
+    match repo.find_latest(params.size).await {
+        Ok(series_list) => {
+            let total = series_list.len();
+            Ok(Json(SeriesPageDto {
+                content: series_list.into_iter().map(|s| s.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: 0,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+async fn get_series_new(
+    State(pool): State<PgPool>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<SeriesPageDto>, axum::response::Response> {
+    let repo = SeriesRepository::new(pool);
+    match repo.find_new(params.size).await {
+        Ok(series_list) => {
+            let total = series_list.len();
+            Ok(Json(SeriesPageDto {
+                content: series_list.into_iter().map(|s| s.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: 0,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+async fn get_series_updated(
+    State(pool): State<PgPool>,
+    Query(params): Query<PageParams>,
+) -> Result<Json<SeriesPageDto>, axum::response::Response> {
+    let repo = SeriesRepository::new(pool);
+    match repo.find_updated(params.size).await {
+        Ok(series_list) => {
+            let total = series_list.len();
+            Ok(Json(SeriesPageDto {
+                content: series_list.into_iter().map(|s| s.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: 0,
+                size: params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
+}
+
+async fn get_series_alphabetical_groups(
+    State(_pool): State<PgPool>,
+    Query(_params): Query<PageParams>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    Ok(Json(serde_json::json!({ "groups": [] })))
+}
+
+async fn list_series_alphabetical_groups(
+    State(_pool): State<PgPool>,
+    Query(_params): Query<PageParams>,
+    Json(_search): Json<SeriesSearchRequest>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    Ok(Json(serde_json::json!({ "groups": [] })))
+}
+
+async fn get_series_collections(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, axum::response::Response> {
+    Ok(Json(vec![]))
+}
+
+async fn analyze_series(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
+}
+
+async fn refresh_series_metadata(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
+}
+
+async fn mark_series_read_progress(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
+async fn delete_series_read_progress(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
+async fn get_series_read_progress_tachiyomi(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn update_series_read_progress_tachiyomi(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+    Json(_body): Json<serde_json::Value>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+}
+
+async fn get_series_thumbnail(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let repo = SeriesRepository::new(pool);
+    
+    let series = match repo.find_by_id(uuid).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Series not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let cover_path = series.cover_file_name
+        .map(PathBuf::from)
+        .filter(|p| p.exists());
+    
+    match cover_path {
+        Some(path) => {
+            let data = match fs::read(&path) {
+                Ok(d) => d,
+                Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+            };
+            Ok((axum::http::StatusCode::OK, [(axum::http::header::CONTENT_TYPE, "image/jpeg")], data).into_response())
+        }
+        None => Err((axum::http::StatusCode::NOT_FOUND, "Thumbnail not found").into_response()),
+    }
+}
+
+async fn get_series_file(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Err((axum::http::StatusCode::NOT_IMPLEMENTED, "Series file download not implemented").into_response())
+}
+
+async fn delete_series_file(
+    State(_pool): State<PgPool>,
+    Path(_id): Path<String>,
+) -> Result<axum::response::Response, axum::response::Response> {
+    Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
+}
+
 pub fn routes() -> Router<PgPool> {
     Router::new()
+        .route("/api/v1/series", get(list_series))
+        .route("/api/v1/series/list", post(list_series_post))
+        .route("/api/v1/series/latest", get(get_series_latest))
+        .route("/api/v1/series/new", get(get_series_new))
+        .route("/api/v1/series/updated", get(get_series_updated))
+        .route("/api/v1/series/alphabetical-groups", get(get_series_alphabetical_groups))
+        .route("/api/v1/series/list/alphabetical-groups", post(list_series_alphabetical_groups))
         .route("/api/v1/libraries/{libraryId}/series", get(get_series_by_library))
         .route("/api/v1/series/{id}", get(get_series))
+        .route("/api/v1/series/{id}/collections", get(get_series_collections))
+        .route("/api/v1/series/{id}/analyze", post(analyze_series))
+        .route("/api/v1/series/{id}/metadata/refresh", post(refresh_series_metadata))
+        .route("/api/v1/series/{id}/metadata", patch(update_series_metadata))
+        .route("/api/v1/series/{id}/read-progress", post(mark_series_read_progress))
+        .route("/api/v1/series/{id}/read-progress", delete(delete_series_read_progress))
+        .route("/api/v2/series/{id}/read-progress/tachiyomi", get(get_series_read_progress_tachiyomi))
+        .route("/api/v2/series/{id}/read-progress/tachiyomi", put(update_series_read_progress_tachiyomi))
+        .route("/api/v1/series/{id}/thumbnail", get(get_series_thumbnail))
+        .route("/api/v1/series/{id}/file", get(get_series_file))
+        .route("/api/v1/series/{id}/file", delete(delete_series_file))
         .route("/api/v1/series/{id}/cover", get(get_series_cover))
         .route("/api/v1/series/{id}/cover", put(upload_series_cover))
         .route("/api/v1/series/{id}/cover", delete(delete_series_cover))
-        .route("/api/v1/series/{id}/metadata", patch(update_series_metadata))
 }

@@ -228,6 +228,53 @@ impl BookRepository {
 
         Ok(())
     }
+
+    pub async fn find_all(&self, limit: usize, offset: usize) -> Result<Vec<Book>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "DELETED_DATE" IS NULL ORDER BY "LAST_MODIFIED_DATE" DESC LIMIT $1 OFFSET $2"#
+        )
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
+
+    pub async fn find_latest(&self, limit: usize) -> Result<Vec<Book>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "DELETED_DATE" IS NULL ORDER BY "LAST_MODIFIED_DATE" DESC LIMIT $1"#
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
+
+    pub async fn find_previous_in_series(&self, series_id: &Uuid, current_number: i32) -> Result<Option<Book>, sqlx::Error> {
+        let result = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "SERIES_ID" = $1 AND "NUMBER" < $2 AND "DELETED_DATE" IS NULL ORDER BY "NUMBER" DESC LIMIT 1"#
+        )
+        .bind(series_id.to_string())
+        .bind(current_number)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(row_to_book))
+    }
+
+    pub async fn find_next_in_series(&self, series_id: &Uuid, current_number: i32) -> Result<Option<Book>, sqlx::Error> {
+        let result = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "SERIES_ID" = $1 AND "NUMBER" > $2 AND "DELETED_DATE" IS NULL ORDER BY "NUMBER" ASC LIMIT 1"#
+        )
+        .bind(series_id.to_string())
+        .bind(current_number)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.map(row_to_book))
+    }
 }
 
 fn row_to_book(row: sqlx::postgres::PgRow) -> Book {

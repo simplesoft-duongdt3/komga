@@ -36,6 +36,7 @@ pub async fn run() {
     let app = Router::new()
         .merge(api::routes())
         .nest_service("/ui", ServeDir::new(&webui_path))
+        .fallback_service(ServeDir::new(&webui_path))
         .layer(TraceLayer::new_for_http())
         .with_state(pool);
 

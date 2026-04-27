@@ -163,6 +163,51 @@ impl SeriesRepository {
 
         Ok(())
     }
+
+    pub async fn find_all(&self, limit: usize, offset: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "DELETED_DATE" IS NULL ORDER BY "NAME" ASC LIMIT $1 OFFSET $2"#
+        )
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn find_latest(&self, limit: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "DELETED_DATE" IS NULL ORDER BY "LAST_MODIFIED_DATE" DESC LIMIT $1"#
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn find_new(&self, limit: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "DELETED_DATE" IS NULL ORDER BY "CREATED_DATE" DESC LIMIT $1"#
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn find_updated(&self, limit: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "DELETED_DATE" IS NULL ORDER BY "LAST_MODIFIED_DATE" DESC LIMIT $1"#
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
 }
 
 fn row_to_series(row: sqlx::postgres::PgRow) -> Series {

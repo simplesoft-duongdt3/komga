@@ -70,5 +70,5 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/api-keys", get(get_api_keys))
         .route("/api/v1/api-keys", post(create_api_key))
-        .route("/api/v1/api-keys/{id}", delete(delete_api_key))
+        .route("/api/v1/api-keys/:id", delete(delete_api_key))
 }

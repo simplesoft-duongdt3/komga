@@ -54,8 +54,11 @@ async fn login(
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
         .ok_or_else(|| (axum::http::StatusCode::UNAUTHORIZED, "Invalid credentials").into_response())?;
     
-    bcrypt::verify(&req.password, &user.password)
-        .map_err(|_| (axum::http::StatusCode::UNAUTHORIZED, "Invalid credentials").into_response())?;
+    if !bcrypt::verify(&req.password, &user.password)
+        .map_err(|_| (axum::http::StatusCode::UNAUTHORIZED, "Invalid credentials").into_response())? 
+    {
+        return Err((axum::http::StatusCode::UNAUTHORIZED, "Invalid credentials").into_response());
+    }
     
     let jwt = get_jwt_auth();
     let token = jwt.generate_token(user.id, user.email.clone())
@@ -286,17 +289,25 @@ async fn create_api_key(
     State(pool): State<PgPool>,
     Json(req): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    let user = UserRepository::new(pool.clone()).find_all().await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?
+    let users_result = UserRepository::new(pool.clone()).find_all().await;
+    let user = users_result
+        .map_err(|e| {
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        })?
         .into_iter().next()
-        .ok_or_else(|| (axum::http::StatusCode::NOT_FOUND, "User not found").into_response())?;
+        .ok_or_else(|| {
+            (axum::http::StatusCode::NOT_FOUND, "User not found").into_response()
+        })?;
     
     let name = req.get("name").and_then(|v| v.as_str()).unwrap_or("API Key").to_string();
     let api_key = ApiKey::new(user.id, name);
     let key_repo = ApiKeyRepository::new(pool);
     
     key_repo.create(&api_key).await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+        .map_err(|e| {
+            eprintln!("[DEBUG] API key create error: {}", e);
+            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+        })?;
     
     Ok(Json(serde_json::json!({
         "id": api_key.id,
@@ -584,20 +595,19 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/users", post(register))
         .route("/api/v2/users", get(list_users))
-        .route("/api/v2/users/{id}", get(get_user))
-        .route("/api/v2/users/{id}", delete(delete_user))
-        .route("/api/v2/users/{id}", patch(update_user))
+        .route("/api/v2/users/:id", get(get_user))
+        .route("/api/v2/users/:id", delete(delete_user))
+        .route("/api/v2/users/:id", patch(update_user))
         .route("/api/v1/users/login", post(login))
-        .route("/api/v1/users/me", get(me))
         .route("/api/v2/users/me", get(me))
+        .route("/api/v1/users/me", get(me))
         .route("/api/v2/users/me/password", patch(update_own_password))
-        .route("/api/v2/users/{id}/password", patch(update_user_password))
+        .route("/api/v2/users/:id/password", patch(update_user_password))
         .route("/api/v2/users/me/authentication-activity", get(get_own_auth_activity))
-        .route("/api/v2/users/authentication-activity", get(get_auth_activity))
-        .route("/api/v2/users/{id}/authentication-activity/latest", get(get_latest_auth_activity))
+        .route("/api/v2/users/:id/authentication-activity/latest", get(get_latest_auth_activity))
         .route("/api/v2/users/me/api-keys", get(get_api_keys))
         .route("/api/v2/users/me/api-keys", post(create_api_key))
-        .route("/api/v2/users/me/api-keys/{keyId}", delete(delete_api_key))
+        .route("/api/v2/users/me/api-keys/:keyId", delete(delete_api_key))
         .route("/api/v1/claim", get(claim_status))
         .route("/api/v1/claim", post(claim_account))
         .route("/api/v1/client-settings/global/list", get(get_client_settings))

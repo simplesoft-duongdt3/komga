@@ -499,6 +499,19 @@ CREATE TABLE "SERVER_SETTINGS"
     "VALUE" varchar NULL
 );
 
+CREATE TABLE "API_KEY"
+(
+    "ID"              varchar   NOT NULL PRIMARY KEY,
+    "USER_ID"         varchar   NOT NULL,
+    "NAME"            varchar   NOT NULL,
+    "KEY"             varchar   NOT NULL UNIQUE,
+    "CREATED_DATE"    timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_USED_DATE"  timestamptz NULL,
+    FOREIGN KEY ("USER_ID") REFERENCES "USER" ("ID")
+);
+
+CREATE INDEX "idx__api_key__user_id" on "API_KEY" ("USER_ID");
+
 CREATE TABLE "USER_API_KEY"
 (
     "ID"                 varchar   NOT NULL PRIMARY KEY,
@@ -598,6 +611,23 @@ CREATE TABLE "CLIENT_SETTINGS_USER"
 );
 
 -- Indices
+CREATE TABLE "TASK"
+(
+    "ID"                   varchar   NOT NULL PRIMARY KEY,
+    "TYPE"                 varchar   NOT NULL,
+    "STATUS"               varchar   NOT NULL,
+    "PRIORITY"             integer   NOT NULL DEFAULT 4,
+    "CREATED_DATE"         timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE"   timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "SCHEDULED_DATE"       timestamptz NULL,
+    "EXECUTION_START_DATE" timestamptz NULL,
+    "EXECUTION_END_DATE"   timestamptz NULL,
+    "DATA"                 text      NULL
+);
+
+CREATE INDEX "idx__task__status" on "TASK" ("STATUS");
+CREATE INDEX "idx__task__created_date" on "TASK" ("CREATED_DATE");
+
 CREATE INDEX "idx__thumbnail_book__book_id" on "THUMBNAIL_BOOK" ("BOOK_ID");
 CREATE INDEX "idx__series_metadata_sharing__series_id" on "SERIES_METADATA_SHARING" ("SERIES_ID");
 CREATE INDEX "idx__book_metadata_aggregation_tag__series_id" on "BOOK_METADATA_AGGREGATION_TAG" ("SERIES_ID");

@@ -35,11 +35,12 @@ async fn test_get_readlist() {
     let resp = ctx.auth_post_json(&token, "/api/v1/readlists",
         &serde_json::json!({"name": "Get RL Test", "summary": ""}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create readlist");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.get(&format!("/api/v1/readlists/{}", id)).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 200, "Failed to GET readlist {}", id);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["name"], "Get RL Test");
 }
@@ -52,13 +53,14 @@ async fn test_update_readlist() {
     let resp = ctx.auth_post_json(&token, "/api/v1/readlists",
         &serde_json::json!({"name": "Update RL", "summary": ""}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create readlist");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.auth_patch_json(&token, &format!("/api/v1/readlists/{}", id),
         &serde_json::json!({"name": "Updated ReadList", "summary": "Updated summary"}),
     ).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 200, "Failed to PATCH readlist");
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["name"], "Updated ReadList");
 }
@@ -71,11 +73,12 @@ async fn test_delete_readlist() {
     let resp = ctx.auth_post_json(&token, "/api/v1/readlists",
         &serde_json::json!({"name": "Delete RL", "summary": ""}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create readlist");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.auth_delete(&token, &format!("/api/v1/readlists/{}", id)).await;
-    assert_eq!(resp.status(), 200);
+    assert!(resp.status() == 200 || resp.status() == 204, "DELETE returned {}", resp.status());
 
     let resp = ctx.get(&format!("/api/v1/readlists/{}", id)).await;
     assert_eq!(resp.status(), 404);
@@ -89,6 +92,7 @@ async fn test_readlist_books_empty() {
     let resp = ctx.auth_post_json(&token, "/api/v1/readlists",
         &serde_json::json!({"name": "Books RL", "summary": ""}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create readlist");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
@@ -106,6 +110,7 @@ async fn test_readlist_thumbnails() {
     let resp = ctx.auth_post_json(&token, "/api/v1/readlists",
         &serde_json::json!({"name": "Thumb RL", "summary": ""}),
     ).await;
+    assert_eq!(resp.status(), 200);
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 

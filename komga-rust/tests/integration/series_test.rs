@@ -8,6 +8,7 @@ async fn test_list_series() {
     let resp = ctx.auth_post_json(&token, "/api/v1/libraries",
         &serde_json::json!({"name": "Series Test Lib", "root": "/tmp/series_test"}),
     ).await;
+    assert_eq!(resp.status(), 200);
     let lib: serde_json::Value = resp.json().await.unwrap();
     let lib_id = lib["id"].as_str().unwrap();
 

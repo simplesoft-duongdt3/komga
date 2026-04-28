@@ -120,10 +120,10 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/collections", get(get_all_collections))
         .route("/api/v1/collections", post(create_collection))
-        .route("/api/v1/collections/{id}", get(get_collection))
-        .route("/api/v1/collections/{id}", patch(update_collection))
-        .route("/api/v1/collections/{id}", delete(delete_collection))
-        .route("/api/v1/collections/{id}/series", get(get_collection_series))
+        .route("/api/v1/collections/:id", get(get_collection))
+        .route("/api/v1/collections/:id", patch(update_collection))
+        .route("/api/v1/collections/:id", delete(delete_collection))
+        .route("/api/v1/collections/:id/series", get(get_collection_series))
 }
 
 async fn get_collection_series(

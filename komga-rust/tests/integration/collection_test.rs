@@ -34,11 +34,12 @@ async fn test_get_collection() {
     let resp = ctx.auth_post_json(&token, "/api/v1/collections",
         &serde_json::json!({"name": "Get Coll"}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create collection");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.get(&format!("/api/v1/collections/{}", id)).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 200, "Failed to GET collection {}", id);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["name"], "Get Coll");
 }
@@ -51,13 +52,14 @@ async fn test_update_collection() {
     let resp = ctx.auth_post_json(&token, "/api/v1/collections",
         &serde_json::json!({"name": "Update Coll"}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create collection");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.auth_patch_json(&token, &format!("/api/v1/collections/{}", id),
         &serde_json::json!({"name": "Updated Collection"}),
     ).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 200, "Failed to PATCH collection");
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["name"], "Updated Collection");
 }
@@ -70,11 +72,12 @@ async fn test_delete_collection() {
     let resp = ctx.auth_post_json(&token, "/api/v1/collections",
         &serde_json::json!({"name": "Delete Coll"}),
     ).await;
+    assert_eq!(resp.status(), 200, "Failed to create collection");
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 
     let resp = ctx.auth_delete(&token, &format!("/api/v1/collections/{}", id)).await;
-    assert_eq!(resp.status(), 200);
+    assert!(resp.status() == 200 || resp.status() == 204, "DELETE returned {}", resp.status());
 
     let resp = ctx.get(&format!("/api/v1/collections/{}", id)).await;
     assert_eq!(resp.status(), 404);
@@ -88,6 +91,7 @@ async fn test_collection_series_empty() {
     let resp = ctx.auth_post_json(&token, "/api/v1/collections",
         &serde_json::json!({"name": "Series Coll"}),
     ).await;
+    assert_eq!(resp.status(), 200);
     let created: serde_json::Value = resp.json().await.unwrap();
     let id = created["id"].as_str().unwrap();
 

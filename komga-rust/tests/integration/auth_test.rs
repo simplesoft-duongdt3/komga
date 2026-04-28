@@ -54,7 +54,7 @@ async fn test_login() {
     register_and_login(&ctx).await;
 
     let resp = ctx.post_json(
-        "/api/v1/login",
+        "/api/v1/users/login",
         &serde_json::json!({"email": "test@test.com", "password": "test123"}),
     ).await;
 
@@ -69,7 +69,7 @@ async fn test_login_invalid_password() {
     register_and_login(&ctx).await;
 
     let resp = ctx.post_json(
-        "/api/v1/login",
+        "/api/v1/users/login",
         &serde_json::json!({"email": "test@test.com", "password": "wrongpassword"}),
     ).await;
 
@@ -105,7 +105,7 @@ async fn test_register_user() {
     let ctx = setup_test_context().await;
     let token = register_and_login(&ctx).await;
 
-    let resp = ctx.auth_post_json(&token, "/api/v2/users",
+    let resp = ctx.auth_post_json(&token, "/api/v1/users",
         &serde_json::json!({"email": "user2@test.com", "password": "pass123"}),
     ).await;
     assert_eq!(resp.status(), 200);
@@ -121,7 +121,7 @@ async fn test_delete_user() {
     let ctx = setup_test_context().await;
     let token = register_and_login(&ctx).await;
 
-    let resp = ctx.auth_post_json(&token, "/api/v2/users",
+    let resp = ctx.auth_post_json(&token, "/api/v1/users",
         &serde_json::json!({"email": "todelete@test.com", "password": "pass123"}),
     ).await;
     assert_eq!(resp.status(), 200);
@@ -132,9 +132,16 @@ async fn test_delete_user() {
         .find(|u| u["email"] == "todelete@test.com")
         .map(|u| u["id"].as_str().unwrap().to_string())
         .unwrap();
-
-    let resp = ctx.auth_delete(&token, &format!("/api/v2/users/{}", user_id)).await;
-    assert_eq!(resp.status(), 204);
+    
+    eprintln!("[DEBUG] Deleting user {}", user_id);
+    let delete_url = format!("/api/v2/users/{}", user_id);
+    eprintln!("[DEBUG] DELETE URL: {}", ctx.url(&delete_url));
+    let resp = ctx.auth_delete(&token, &delete_url).await;
+    let delete_status = resp.status();
+    eprintln!("[DEBUG] DELETE status: {:?}", delete_status);
+    let delete_body = resp.text().await.unwrap();
+    eprintln!("[DEBUG] DELETE body: {}", delete_body);
+    assert_eq!(delete_status, 204);
 
     let resp = ctx.auth_get(&token, "/api/v2/users").await;
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
@@ -146,19 +153,19 @@ async fn test_update_password() {
     let ctx = setup_test_context().await;
     let token = register_and_login(&ctx).await;
 
-    let resp = ctx.auth_put_json(&token, "/api/v2/users/me/password",
+    let resp = ctx.auth_patch_json(&token, "/api/v2/users/me/password",
         &serde_json::json!({"password": "newpassword123"}),
     ).await;
     assert_eq!(resp.status(), 204);
 
     let resp = ctx.post_json(
-        "/api/v1/login",
+        "/api/v1/users/login",
         &serde_json::json!({"email": "test@test.com", "password": "newpassword123"}),
     ).await;
     assert_eq!(resp.status(), 200);
 
     let resp = ctx.post_json(
-        "/api/v1/login",
+        "/api/v1/users/login",
         &serde_json::json!({"email": "test@test.com", "password": "test123"}),
     ).await;
     assert_eq!(resp.status(), 401);
@@ -169,7 +176,7 @@ async fn test_cookie_login() {
     let ctx = setup_test_context().await;
     register_and_login(&ctx).await;
 
-    let resp = ctx.get("/api/v2/login/set-cookie").await;
+    let resp = ctx.get("/api/v1/login/set-cookie").await;
     assert_eq!(resp.status(), 200);
     let cookie = resp.headers().get("set-cookie");
     assert!(cookie.is_some());
@@ -181,7 +188,7 @@ async fn test_logout() {
     let ctx = setup_test_context().await;
     let token = register_and_login(&ctx).await;
 
-    let resp = ctx.auth_get(&token, "/api/v2/logout").await;
+    let resp = ctx.auth_get(&token, "/api/logout").await;
     assert_eq!(resp.status(), 200);
     let cookie = resp.headers().get("set-cookie");
     assert!(cookie.is_some());
@@ -212,7 +219,7 @@ async fn test_releases() {
 async fn test_oauth2_providers() {
     let ctx = setup_test_context().await;
 
-    let resp = ctx.get("/api/v2/oauth2/providers").await;
+    let resp = ctx.get("/api/v1/oauth2/providers").await;
     assert_eq!(resp.status(), 200);
     let _body: Vec<serde_json::Value> = resp.json().await.unwrap();
 }

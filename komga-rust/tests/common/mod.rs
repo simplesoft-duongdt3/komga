@@ -4,6 +4,12 @@ use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::redis::Redis;
 
+fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .try_init();
+}
+
 pub struct TestContext {
     client: reqwest::Client,
     base_url: String,
@@ -88,6 +94,7 @@ impl TestContext {
 }
 
 pub async fn setup_test_context() -> TestContext {
+    init_tracing();
     let pg = Postgres::default().start().await.expect("Failed to start PostgreSQL");
     let host = pg.get_host().await.expect("Failed to get host");
     let port = pg.get_host_port_ipv4(5432).await.expect("Failed to get port");

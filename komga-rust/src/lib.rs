@@ -19,7 +19,7 @@ pub fn create_app(pool: PgPool) -> Router {
         .unwrap_or_default()
         .join("webui-dist");
     
-    Router::new()
+    Router::<PgPool>::new()
         .merge(api::routes())
         .nest_service("/ui", ServeDir::new(&webui_path))
         .fallback_service(ServeDir::new(&webui_path))

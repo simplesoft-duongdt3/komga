@@ -30,6 +30,7 @@ async fn get_tasks(
     State(pool): State<PgPool>,
     Query(params): Query<TaskParams>,
 ) -> Result<Json<TaskPageDto>, axum::response::Response> {
+    eprintln!("[DEBUG] get_tasks called");
     let repo = TaskRepository::new(pool);
     let status = params.status.as_deref();
     let size = params.size.max(1);
@@ -38,15 +39,19 @@ async fn get_tasks(
         Ok(tasks) => {
             let total = tasks.len();
             let task_dtos: Vec<TaskDto> = tasks.into_iter().map(|t| t.into()).collect();
+            eprintln!("[DEBUG] Found {} tasks", total);
             Ok(Json(TaskPageDto {
                 content: task_dtos,
                 total_elements: total,
-                total_pages: total / size,
+                total_pages: if size > 0 { total / size } else { 1 },
                 number: params.page,
                 size: params.size,
             }))
         }
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+        Err(e) => {
+            eprintln!("[DEBUG] Task find_all error: {}", e);
+            Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+        },
     }
 }
 
@@ -84,6 +89,6 @@ async fn delete_task(
 pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/tasks", get(get_tasks))
-        .route("/api/v1/tasks/{id}", get(get_task))
-        .route("/api/v1/tasks/{id}", delete(delete_task))
+        .route("/api/v1/tasks/:id", get(get_task))
+        .route("/api/v1/tasks/:id", delete(delete_task))
 }

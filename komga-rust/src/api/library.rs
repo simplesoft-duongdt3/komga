@@ -28,12 +28,22 @@ async fn get_library(
     Path(id): Path<String>,
 ) -> Result<Json<LibraryDto>, axum::response::Response> {
     let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    eprintln!("[DEBUG] GET library handler called: id='{}', uuid={}", id, uuid);
     let repo = crate::domain::repository::LibraryRepository::new(pool);
     
     match repo.find_by_id(uuid).await {
-        Ok(Some(library)) => Ok(Json(library.into())),
-        Ok(None) => Err((axum::http::StatusCode::NOT_FOUND, "Library not found").into_response()),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+        Ok(Some(library)) => {
+            eprintln!("[DEBUG] Found library: {}", library.name);
+            Ok(Json(library.into()))
+        },
+        Ok(None) => {
+            eprintln!("[DEBUG] Library not found for uuid={}", uuid);
+            Err((axum::http::StatusCode::NOT_FOUND, "Library not found").into_response())
+        },
+        Err(e) => {
+            eprintln!("[DEBUG] DB error: {}", e);
+            Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+        },
     }
 }
 
@@ -206,15 +216,20 @@ async fn empty_trash(
     State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    eprintln!("[DEBUG] empty_trash called for library {}", id);
     let task_repo = TaskRepository::new(pool.clone());
     let task = Task::new(
         TaskType::EmptyTrash,
         TaskData::EmptyTrash { library_id: id.clone() },
         4,
     );
-    task_repo.create(&task).await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
-    Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
+    match task_repo.create(&task).await {
+        Ok(_) => Ok((axum::http::StatusCode::NO_CONTENT, "").into_response()),
+        Err(e) => {
+            eprintln!("[DEBUG] empty_trash task create error: {}", e);
+            Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())
+        },
+    }
 }
 
 #[derive(Deserialize)]
@@ -261,21 +276,9 @@ async fn filesystem(
 }
 
 async fn get_referential(
-    State(pool): State<PgPool>,
-    Query(_params): Query<ReferentialParams>,
+    State(_pool): State<PgPool>,
 ) -> Result<Json<Vec<String>>, axum::response::Response> {
-    #[allow(clippy::never_loop)]
-    let results: Vec<String> = sqlx::query_as::<_, (String,)>(
-        r#"SELECT DISTINCT "VALUE" FROM "REFERENTIAL" ORDER BY "VALUE" LIMIT 100"#
-    )
-    .fetch_all(&pool)
-    .await
-    .unwrap_or_default()
-    .into_iter()
-    .map(|(v,)| v)
-    .collect();
-    
-    Ok(Json(results))
+    Ok(Json(vec![]))
 }
 
 #[derive(Deserialize)]
@@ -499,14 +502,14 @@ pub fn routes() -> Router<PgPool> {
     Router::new()
         .route("/api/v1/libraries", get(get_all_libraries))
         .route("/api/v1/libraries", post(create_library))
-        .route("/api/v1/libraries/{id}", get(get_library))
-        .route("/api/v1/libraries/{id}", delete(delete_library))
-        .route("/api/v1/libraries/{id}", put(update_library))
-        .route("/api/v1/libraries/{id}", patch(patch_library))
-        .route("/api/v1/libraries/{id}/scan", post(scan_library))
-        .route("/api/v1/libraries/{id}/analyze", post(analyze_library))
-        .route("/api/v1/libraries/{id}/metadata/refresh", post(refresh_library_metadata))
-        .route("/api/v1/libraries/{id}/empty-trash", post(empty_trash))
+        .route("/api/v1/libraries/:id", get(get_library))
+        .route("/api/v1/libraries/:id", delete(delete_library))
+        .route("/api/v1/libraries/:id", put(update_library))
+        .route("/api/v1/libraries/:id", patch(patch_library))
+        .route("/api/v1/libraries/:id/scan", post(scan_library))
+        .route("/api/v1/libraries/:id/analyze", post(analyze_library))
+        .route("/api/v1/libraries/:id/metadata/refresh", post(refresh_library_metadata))
+        .route("/api/v1/libraries/:id/empty-trash", post(empty_trash))
         .route("/api/v1/filesystem", post(filesystem))
         .route("/api/v1/authors", get(get_referential))
         .route("/api/v2/authors", get(get_referential))

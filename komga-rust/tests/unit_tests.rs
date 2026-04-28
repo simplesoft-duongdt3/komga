@@ -157,15 +157,16 @@ mod tests {
         fn test_page_dto() {
             let page = PageDto {
                 number: 1,
-                file_name: "page01.jpg".to_string(),
+                file_name: "page001.jpg".to_string(),
                 media_type: "image/jpeg".to_string(),
-                width: Some(1920),
-                height: Some(1080),
-                size_bytes: Some(50000),
+                width: Some(800),
+                height: Some(1200),
+                size_bytes: Some(102400),
+                size: None,
             };
 
             assert_eq!(page.number, 1);
-            assert_eq!(page.file_name, "page01.jpg");
+            assert_eq!(page.file_name, "page001.jpg");
             assert!(page.width.is_some());
             assert!(page.size_bytes.is_some());
         }
@@ -173,22 +174,22 @@ mod tests {
         #[test]
         fn test_page_dto_serialization() {
             let page = PageDto {
-                number: 1,
-                file_name: "page.jpg".to_string(),
-                media_type: "image/jpeg".to_string(),
+                number: 2,
+                file_name: "page002.jpg".to_string(),
+                media_type: "image/png".to_string(),
                 width: None,
                 height: None,
-                size_bytes: None,
+                size_bytes: Some(204800),
+                size: None,
             };
 
             let json = serde_json::to_string(&page).unwrap();
-            assert!(json.contains("page.jpg"));
-            assert!(json.contains("1"));
+            assert!(json.contains("\"number\":2"));
         }
 
         #[test]
         fn test_page_dto_deserialization() {
-            let json = r#"{"number":5,"file_name":"test.png","media_type":"image/png"}"#;
+            let json = r#"{"number":5,"fileName":"test.png","mediaType":"image/png"}"#;
             let page: PageDto = serde_json::from_str(json).unwrap();
 
             assert_eq!(page.number, 5);

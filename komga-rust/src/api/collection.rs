@@ -39,6 +39,10 @@ async fn get_all_collections(
                 total_pages: 1,
                 number: 0,
                 size: total,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),

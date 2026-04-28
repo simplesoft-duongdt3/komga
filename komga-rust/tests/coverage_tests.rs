@@ -311,33 +311,33 @@ mod tests {
                 id: "test-id".to_string(),
                 name: "Test Library".to_string(),
                 root: "/books".to_string(),
-                library_type: "COMIC".to_string(),
-                import_comicinfo_book: true,
-                import_comicinfo_series: true,
-                import_comicinfo_collection: true,
+                import_comic_info_book: true,
+                import_comic_info_series: true,
+                import_comic_info_collection: true,
                 import_epub_book: true,
                 import_epub_series: true,
                 scan_force_modified_time: false,
-                scan_startup: false,
+                scan_on_startup: false,
                 import_local_artwork: true,
-                import_comicinfo_readlist: true,
+                import_comic_info_read_list: true,
                 import_barcode_isbn: true,
                 convert_to_cbz: false,
                 repair_extensions: false,
                 empty_trash_after_scan: false,
                 import_mylar_series: true,
                 series_cover: "FIRST".to_string(),
-                unavailable_date: None,
-                hash_files: true,
-                hash_pages: false,
-                analyze_dimensions: true,
-                import_comicinfo_series_append_volume: true,
-                oneshots_directory: None,
+                scan_directory_exclusions: vec![],
                 scan_cbx: true,
                 scan_pdf: true,
                 scan_epub: true,
                 scan_interval: "EVERY_6H".to_string(),
+                hash_files: true,
+                hash_pages: false,
+                analyze_dimensions: true,
+                import_comic_info_series_append_volume: true,
                 hash_koreader: false,
+                oneshots_directory: None,
+                unavailable: None,
             };
             assert_eq!(dto.name, "Test Library");
         }
@@ -349,10 +349,19 @@ mod tests {
                 library_id: "lib".to_string(),
                 name: "Series".to_string(),
                 url: "/url".to_string(),
-                book_count: 5,
+                books_count: 5,
+                books_in_progress_count: 0,
+                books_read_count: 0,
+                books_unread_count: 5,
                 oneshot: false,
+                deleted: false,
+                created: Some("2024-01-01T00:00:00Z".to_string()),
+                last_modified: Some("2024-01-01T00:00:00Z".to_string()),
+                file_last_modified: None,
+                books_metadata: None,
+                metadata: None,
             };
-            assert_eq!(dto.book_count, 5);
+            assert_eq!(dto.books_count, 5);
         }
 
         #[test]
@@ -360,14 +369,22 @@ mod tests {
             let dto = BookDto {
                 id: "id".to_string(),
                 series_id: "series".to_string(),
+                series_title: String::new(),
                 library_id: "lib".to_string(),
                 name: "book.cbz".to_string(),
                 url: "/url".to_string(),
                 number: 1,
-                file_size: 1000,
                 file_hash: "hash".to_string(),
+                size_bytes: 1000,
+                size: String::new(),
                 oneshot: false,
-                file_hash_koreader: "".to_string(),
+                created: Some("2024-01-01T00:00:00Z".to_string()),
+                last_modified: Some("2024-01-01T00:00:00Z".to_string()),
+                file_last_modified: None,
+                deleted: false,
+                media: None,
+                metadata: None,
+                read_progress: None,
             };
             assert_eq!(dto.number, 1);
         }
@@ -393,11 +410,13 @@ mod tests {
         #[test]
         fn test_read_progress_dto() {
             let dto = ReadProgressDto {
-                book_id: "book-id".to_string(),
-                user_id: "user-id".to_string(),
                 page: 10,
                 completed: false,
                 read_date: Some("2024-01-01".to_string()),
+                device_id: None,
+                device_name: None,
+                created: None,
+                last_modified: None,
             };
             assert_eq!(dto.page, 10);
         }
@@ -411,6 +430,7 @@ mod tests {
                 width: Some(1920),
                 height: Some(1080),
                 size_bytes: Some(50000),
+                size: None,
             };
             assert_eq!(dto.number, 1);
         }
@@ -423,6 +443,10 @@ mod tests {
                 total_pages: 0,
                 number: 0,
                 size: 20,
+                empty: true,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             };
             assert_eq!(dto.size, 20);
         }

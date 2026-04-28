@@ -47,6 +47,10 @@ async fn get_books_by_series(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -104,6 +108,7 @@ async fn get_book_pages(
                         width: p.width,
                         height: p.height,
                         size_bytes: p.size_bytes,
+                        size: None,
                     }).collect();
                     Ok(Json(pages))
                 }
@@ -238,11 +243,13 @@ async fn get_book_read_progress(
     
     match repo.find_by_book_and_user(book_uuid, user_id).await {
         Ok(Some(progress)) => Ok(Json(Some(ReadProgressDto {
-            book_id: progress.book_id.to_string(),
-            user_id: progress.user_id.to_string(),
             page: progress.page,
             completed: progress.completed,
             read_date: progress.read_date.map(|d| d.to_rfc3339()),
+            device_id: None,
+            device_name: None,
+            created: None,
+            last_modified: None,
         }))),
         Ok(None) => Ok(Json(None)),
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -491,6 +498,10 @@ async fn list_books(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -512,6 +523,10 @@ async fn list_books_post(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -532,6 +547,10 @@ async fn get_books_latest(
                 total_pages: 1,
                 number: 0,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -552,6 +571,10 @@ async fn get_books_ondeck(
                 total_pages: 1,
                 number: 0,
                 size: _params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -572,6 +595,10 @@ async fn get_books_duplicates(
                 total_pages: 1,
                 number: 0,
                 size: _params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -900,11 +927,13 @@ async fn get_book_progression(
     
     match repo.find_by_book_and_user(book_uuid, user_id).await {
         Ok(Some(progress)) => Ok(Json(Some(ReadProgressDto {
-            book_id: progress.book_id.to_string(),
-            user_id: progress.user_id.to_string(),
             page: progress.page,
             completed: progress.completed,
             read_date: progress.read_date.map(|d| d.to_rfc3339()),
+            device_id: None,
+            device_name: None,
+            created: None,
+            last_modified: None,
         }))),
         Ok(None) => Ok(Json(None)),
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),

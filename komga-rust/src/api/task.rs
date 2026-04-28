@@ -46,6 +46,10 @@ async fn get_tasks(
                 total_pages: if size > 0 { total / size } else { 1 },
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => {

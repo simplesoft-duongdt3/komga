@@ -48,6 +48,10 @@ async fn get_series_by_library(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -274,6 +278,10 @@ async fn list_series(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -301,6 +309,10 @@ async fn list_series_post(
                 total_pages: 1,
                 number: params.page,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -321,6 +333,10 @@ async fn get_series_latest(
                 total_pages: 1,
                 number: 0,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -341,6 +357,10 @@ async fn get_series_new(
                 total_pages: 1,
                 number: 0,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
@@ -361,6 +381,10 @@ async fn get_series_updated(
                 total_pages: 1,
                 number: 0,
                 size: params.size,
+                empty: false,
+                first: true,
+                last: true,
+                number_of_elements: 0,
             }))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),

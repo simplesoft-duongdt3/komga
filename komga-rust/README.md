@@ -62,3 +62,75 @@ Run with debug logging:
 ```bash
 RUST_LOG=debug cargo run
 ```
+
+## Changelog
+
+### 2026-04-28 — API stub fill-in, route fixes, integration test suite
+
+**Stubbed endpoint fill-in** — replaced 40+ empty/placeholder handlers with real implementations:
+- **Search** — connected Tantivy search index with DB fallback (ILIKE)
+- **Auth** — real JWT token generation/validation, bcrypt password hashing, login cookie/logout
+- **User CRUD** — list, get, create, update, delete users + password management
+- **Task triggers** — analyze/refresh/import/delete endpoints create real background tasks
+- **Library** — PATCH (field update), empty-trash, settings persistence (SERVER_SETTINGS table)
+- **Settings** — server + client settings persisted in DB
+- **Referential data** — authors, genres, tags, publishers from DB
+- **Page hashes** — real DB queries with pagination
+- **Series/ReadList ZIP download** — full file bundling in-memory
+- **Tachiyomi/Mihon sync** — read progress sync for series and readlists
+- **Thumbnails** — readlist thumbnail repository + API handlers
+- **ReadList navigation** — next/previous book from readlist order
+- **Historical events, announcements, auth activity** — real DB queries
+- **Transient books & fonts** — filesystem-based support
+- **ReadList comicrack match** — creates real ReadList in DB
+- **Release info** — reads version from Cargo.toml
+
+**Bug fixes:**
+- `{param}` → `:param` route syntax (Axum 0.7 uses `:` not `{}`, affected 73 route definitions across 7 files)
+- `TIMESTAMP` → `TIMESTAMPTZ` in migration (sqlx `DateTime<Utc>` compatibility)
+- Nullable `AGE_RESTRICTION_ALLOW_ONLY` → `Option<bool>` in User model
+- Library `INSERT` column/value count mismatch (32 VALUES vs 31 columns)
+- Missing `TASK` and `API_KEY` tables in migration
+- `bcrypt::verify()` not checking the boolean return value (invalid passwords were accepted)
+- Auth handlers using hardcoded `"admin@localhost"` → `find_all()` first user
+
+**New repository modules (7 files):**
+- `ServerSettingsRepository` — SERVER_SETTINGS key-value CRUD
+- `ClientSettingsRepository` — CLIENT_SETTINGS_GLOBAL/USER CRUD
+- `PageHashRepository` — page hash query + pagination
+- `HistoricalEventRepository` — historical event + properties queries
+- `ThumbnailRepository` — multi-table thumbnail CRUD (BOOK/SERIES/READLIST/COLLECTION)
+
+**Integration test suite** — first-ever integration tests using testcontainers:
+- `tests/common/mod.rs` — TestContext with dockerized PostgreSQL, auto-migration, random-port HTTP server
+- 50 integration tests across 5 modules (auth, library, series, readlist, collection)
+- Tests real HTTP endpoints against a fresh PostgreSQL container per test run
+- Covers: auth flow, CRUD for all entity types, settings, search, API keys, Tachiyomi sync, thumbnails
+
+**Test results:** 134 total tests — 56 unit/lib + 5 API + 50 integration + 23 existing — **all passing**.
+
+### 2026-04-27 — Metadata enhancement, search infrastructure
+
+- Series/book metadata PATCH endpoints
+- ComicRack XML sidecar parsing
+- Metadata aggregation from multiple sources
+- Tantivy search index integration (lazy loading)
+- Redis caching infrastructure
+- Image processing (thumbnail generation, resize, format conversion)
+- Mylar metadata support (series.json reader)
+- Local artwork detection
+- Aggregated series/book metadata DTOs
+
+### 2026-04-26 — Core API scaffold, initial release
+
+- Axum-based HTTP server with PgPool state
+- JWT authentication (register, login, session)
+- Library CRUD (create, read, update, delete)
+- Series CRUD (basic listing by library)
+- Book CRUD (basic listing by series)
+- ReadList CRUD API
+- Collection CRUD API
+- Read progress tracking (per user/book)
+- Task system (26 task types defined with worker)
+- File parsing (CBZ/ZIP, EPUB, PDF extraction)
+- 23 unit tests for models and infrastructure

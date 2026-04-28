@@ -1,0 +1,2745 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Komga Rust API",
+    "version": "0.1.0",
+    "description": "Rust implementation of Komga media server for comics/manga. REST API for managing libraries, series, books, read progress, readlists, collections, and more."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Default server"
+    }
+  ],
+  "paths": {
+    "/api/v1/claim": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Check if the server has been claimed",
+        "operationId": "claimStatus",
+        "responses": {
+          "200": {
+            "description": "Claim status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isClaimed": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Claim the server (first-time setup)",
+        "operationId": "claimAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "minLength": 6 }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Claim successful, returns JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Server already claimed"
+          }
+        }
+      }
+    },
+    "/api/v1/users/login": {
+      "post": {
+        "tags": ["Authentication"],
+        "summary": "Login with email and password",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful, returns JWT token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/v1/users/me": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Get current user",
+        "operationId": "getCurrentUser",
+        "responses": {
+          "200": {
+            "description": "Current user info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "post": {
+        "tags": ["Users"],
+        "summary": "Register a new user",
+        "operationId": "registerUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "User registered" }
+        }
+      }
+    },
+    "/api/v2/users": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "List all users",
+        "operationId": "listUsers",
+        "responses": {
+          "200": {
+            "description": "List of users",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/UserDto" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/users/{id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get user by ID",
+        "operationId": "getUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserDto" }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      },
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Update user",
+        "operationId": "updateUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "sharedAllLibraries": { "type": "boolean" },
+                  "ageRestriction": { "type": "integer", "nullable": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "User updated" },
+          "404": { "description": "User not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete user",
+        "operationId": "deleteUser",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "User deleted" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/v2/users/me/password": {
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Update own password",
+        "operationId": "updateOwnPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string", "minLength": 6 }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Password updated" }
+        }
+      }
+    },
+    "/api/v2/users/{id}/password": {
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Update user password (admin)",
+        "operationId": "updateUserPassword",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "password": { "type": "string", "minLength": 6 }
+                },
+                "required": ["password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Password updated" }
+        }
+      }
+    },
+    "/api/v2/users/me/api-keys": {
+      "get": {
+        "tags": ["API Keys"],
+        "summary": "List own API keys",
+        "operationId": "listMyApiKeys",
+        "responses": {
+          "200": {
+            "description": "List of API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ApiKeyDto" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["API Keys"],
+        "summary": "Create API key",
+        "operationId": "createApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiKeyDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/users/me/api-keys/{keyId}": {
+      "delete": {
+        "tags": ["API Keys"],
+        "summary": "Delete API key",
+        "operationId": "deleteApiKey",
+        "parameters": [
+          { "name": "keyId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "API key deleted" }
+        }
+      }
+    },
+    "/api/v1/login/set-cookie": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Set session cookie",
+        "operationId": "loginSetCookie",
+        "responses": {
+          "200": { "description": "Cookie set" }
+        }
+      }
+    },
+    "/api/logout": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "Logout (clear session cookie)",
+        "operationId": "logout",
+        "responses": {
+          "200": { "description": "Cookie cleared" }
+        }
+      }
+    },
+    "/api/v1/libraries": {
+      "get": {
+        "tags": ["Libraries"],
+        "summary": "List all libraries",
+        "operationId": "listLibraries",
+        "responses": {
+          "200": {
+            "description": "List of libraries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/LibraryDto" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Libraries"],
+        "summary": "Create a new library",
+        "operationId": "createLibrary",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "root": { "type": "string" }
+                },
+                "required": ["name", "root"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Library created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LibraryDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}": {
+      "get": {
+        "tags": ["Libraries"],
+        "summary": "Get library by ID",
+        "operationId": "getLibrary",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Library details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LibraryDto" }
+              }
+            }
+          },
+          "404": { "description": "Library not found" }
+        }
+      },
+      "patch": {
+        "tags": ["Libraries"],
+        "summary": "Update library fields",
+        "operationId": "patchLibrary",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "root": { "type": "string" },
+                  "importComicInfoBook": { "type": "boolean" },
+                  "importComicInfoSeries": { "type": "boolean" },
+                  "importEpubBook": { "type": "boolean" },
+                  "importEpubSeries": { "type": "boolean" },
+                  "importLocalArtwork": { "type": "boolean" },
+                  "importBarcodeIsbn": { "type": "boolean" },
+                  "convertToCbz": { "type": "boolean" },
+                  "hashFiles": { "type": "boolean" },
+                  "hashPages": { "type": "boolean" },
+                  "analyzeDimensions": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Library updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LibraryDto" }
+              }
+            }
+          },
+          "404": { "description": "Library not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Libraries"],
+        "summary": "Delete library",
+        "operationId": "deleteLibrary",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Library deleted" },
+          "404": { "description": "Library not found" }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/scan": {
+      "post": {
+        "tags": ["Libraries"],
+        "summary": "Trigger library scan",
+        "operationId": "scanLibrary",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Scan task created" }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/analyze": {
+      "post": {
+        "tags": ["Libraries"],
+        "summary": "Trigger library analysis",
+        "operationId": "analyzeLibrary",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Analysis task created" }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/metadata/refresh": {
+      "post": {
+        "tags": ["Libraries"],
+        "summary": "Refresh library metadata",
+        "operationId": "refreshLibraryMetadata",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Metadata refresh task created" }
+        }
+      }
+    },
+    "/api/v1/libraries/{id}/empty-trash": {
+      "post": {
+        "tags": ["Libraries"],
+        "summary": "Empty library trash",
+        "operationId": "emptyLibraryTrash",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Empty trash task created" }
+        }
+      }
+    },
+    "/api/v1/series": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "List all series",
+        "operationId": "listSeries",
+        "parameters": [
+          { "name": "library_id", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of series",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SeriesPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/libraries/{libraryId}/series": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "Get series by library",
+        "operationId": "getSeriesByLibrary",
+        "parameters": [
+          { "name": "libraryId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of series in library",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SeriesPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{id}": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "Get series by ID",
+        "operationId": "getSeries",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SeriesDto" }
+              }
+            }
+          },
+          "404": { "description": "Series not found" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/collections": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "Get collections containing a series",
+        "operationId": "getSeriesCollections",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/CollectionDto" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{id}/metadata": {
+      "patch": {
+        "tags": ["Series"],
+        "summary": "Update series metadata",
+        "operationId": "updateSeriesMetadata",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SeriesMetadataDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Series metadata updated" },
+          "404": { "description": "Series not found" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/read-progress": {
+      "post": {
+        "tags": ["Series"],
+        "summary": "Mark all books in series as read",
+        "operationId": "markSeriesReadProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "All books marked as read" }
+        }
+      },
+      "delete": {
+        "tags": ["Series"],
+        "summary": "Clear read progress for all books in series",
+        "operationId": "deleteSeriesReadProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Read progress cleared" }
+        }
+      }
+    },
+    "/api/v2/series/{id}/read-progress/tachiyomi": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "Get Tachiyomi read progress for series",
+        "operationId": "getSeriesTachiyomiProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tachiyomi progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mangaId": { "type": "string" },
+                    "readChapters": { "type": "array", "items": { "type": "integer" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["Series"],
+        "summary": "Update Tachiyomi read progress for series",
+        "operationId": "updateSeriesTachiyomiProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "readChapters": { "type": "array", "items": { "type": "integer" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Progress updated" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/file": {
+      "get": {
+        "tags": ["Series"],
+        "summary": "Download series as ZIP archive",
+        "operationId": "getSeriesFile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP file containing all books in series",
+            "content": {
+              "application/zip": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Series"],
+        "summary": "Delete series and all its books from disk",
+        "operationId": "deleteSeriesFile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Delete task created" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/analyze": {
+      "post": {
+        "tags": ["Series"],
+        "summary": "Analyze series books",
+        "operationId": "analyzeSeries",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Analysis task created" }
+        }
+      }
+    },
+    "/api/v1/series/{id}/metadata/refresh": {
+      "post": {
+        "tags": ["Series"],
+        "summary": "Refresh series metadata",
+        "operationId": "refreshSeriesMetadata",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Metadata refresh task created" }
+        }
+      }
+    },
+    "/api/v1/books": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "List all books",
+        "operationId": "listBooks",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of books",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/ondeck": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get on-deck books (in-progress reading)",
+        "operationId": "getBooksOndeck",
+        "parameters": [
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "On-deck books",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/duplicates": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get duplicate books (same file hash)",
+        "operationId": "getBooksDuplicates",
+        "parameters": [
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Duplicate books",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/latest": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get latest books",
+        "operationId": "getBooksLatest",
+        "parameters": [
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest books",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{seriesId}/books": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "List books in a series",
+        "operationId": "getBooksBySeries",
+        "parameters": [
+          { "name": "seriesId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of books in series",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get book by ID",
+        "operationId": "getBook",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookDto" }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/file": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Download book file",
+        "operationId": "getBookFile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book file",
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Books"],
+        "summary": "Delete book file from disk",
+        "operationId": "deleteBookFile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Delete task created" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/metadata": {
+      "patch": {
+        "tags": ["Books"],
+        "summary": "Update book metadata",
+        "operationId": "updateBookMetadata",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BookMetadataDto" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Book metadata updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookMetadataDto" }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/metadata/refresh": {
+      "post": {
+        "tags": ["Books"],
+        "summary": "Refresh book metadata from file",
+        "operationId": "refreshBookMetadata",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Metadata refresh task created" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/analyze": {
+      "post": {
+        "tags": ["Books"],
+        "summary": "Analyze book file",
+        "operationId": "analyzeBook",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Analysis task created" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/pages": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get book pages",
+        "operationId": "getBookPages",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/PageDto" }
+                }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/pages/{pageNumber}": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get a specific page image",
+        "operationId": "getBookPage",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "pageNumber", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Page not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/pages/{pageNumber}/thumbnail": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get page thumbnail",
+        "operationId": "getBookPageThumbnail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "pageNumber", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page thumbnail image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Thumbnail not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/thumbnail": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get book cover thumbnail",
+        "operationId": "getBookThumbnail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Thumbnail not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/read-progress": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get read progress for a book",
+        "operationId": "getBookReadProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read progress",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadProgressDto" }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      },
+      "patch": {
+        "tags": ["Books"],
+        "summary": "Update read progress for a book",
+        "operationId": "updateBookReadProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ReadProgressUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Read progress updated" },
+          "404": { "description": "Book not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Books"],
+        "summary": "Delete read progress for a book",
+        "operationId": "deleteBookReadProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Read progress deleted" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/next": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get next book in series",
+        "operationId": "getBookNext",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Next book (or null)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}/previous": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get previous book in series",
+        "operationId": "getBookPrevious",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Previous book (or null)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}/readlists": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get readlists containing a book",
+        "operationId": "getBookReadlists",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of readlists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ReadListDto" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/books/{id}/manifest": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get book manifest (reader launch data)",
+        "operationId": "getBookManifest",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book manifest",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          },
+          "404": { "description": "Book not found" }
+        }
+      }
+    },
+    "/api/v1/books/{id}/cover": {
+      "get": {
+        "tags": ["Books"],
+        "summary": "Get book cover image",
+        "operationId": "getBookCover",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cover image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Cover not found" }
+        }
+      },
+      "put": {
+        "tags": ["Books"],
+        "summary": "Upload book cover image",
+        "operationId": "uploadBookCover",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Cover uploaded" }
+        }
+      },
+      "delete": {
+        "tags": ["Books"],
+        "summary": "Delete book cover",
+        "operationId": "deleteBookCover",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Cover deleted" }
+        }
+      }
+    },
+    "/api/v1/books/import": {
+      "post": {
+        "tags": ["Books"],
+        "summary": "Import books into library",
+        "operationId": "importBooks",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "books": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "sourceFile": { "type": "string" },
+                        "seriesId": { "type": "string", "format": "uuid" },
+                        "destinationName": { "type": "string" },
+                        "upgradeBookId": { "type": "string", "format": "uuid" }
+                      },
+                      "required": ["sourceFile", "seriesId"]
+                    }
+                  },
+                  "copyMode": {
+                    "type": "string",
+                    "enum": ["HARDLINK", "COPY", "MOVE"],
+                    "default": "HARDLINK"
+                  }
+                },
+                "required": ["books"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": { "description": "Import tasks created" }
+        }
+      }
+    },
+    "/api/v1/readlists": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "List all readlists",
+        "operationId": "listReadlists",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of readlists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadListPageDto" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["ReadLists"],
+        "summary": "Create a readlist",
+        "operationId": "createReadlist",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateReadListRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Readlist created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadListDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get readlist by ID",
+        "operationId": "getReadlist",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readlist details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadListDto" }
+              }
+            }
+          },
+          "404": { "description": "Readlist not found" }
+        }
+      },
+      "patch": {
+        "tags": ["ReadLists"],
+        "summary": "Update readlist",
+        "operationId": "updateReadlist",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateReadListRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Readlist updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadListDto" }
+              }
+            }
+          },
+          "404": { "description": "Readlist not found" }
+        }
+      },
+      "delete": {
+        "tags": ["ReadLists"],
+        "summary": "Delete readlist",
+        "operationId": "deleteReadlist",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Readlist deleted" },
+          "404": { "description": "Readlist not found" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/books": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "List books in a readlist",
+        "operationId": "getReadlistBooks",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of books",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookPageDto" }
+              }
+            }
+          },
+          "404": { "description": "Readlist not found" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/books/{bookId}/next": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get next book in readlist",
+        "operationId": "getReadlistNextBook",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "bookId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Next book (or null)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/books/{bookId}/previous": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get previous book in readlist",
+        "operationId": "getReadlistPreviousBook",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "bookId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Previous book (or null)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BookDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/file": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Download readlist as ZIP archive",
+        "operationId": "getReadlistFile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ZIP file containing all books in readlist",
+            "content": {
+              "application/zip": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/read-progress/tachiyomi": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get Tachiyomi sync progress for readlist",
+        "operationId": "getReadlistTachiyomiProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tachiyomi progress data",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["ReadLists"],
+        "summary": "Update Tachiyomi sync progress for readlist",
+        "operationId": "updateReadlistTachiyomiProgress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "readChapters": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Progress updated" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/thumbnails": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "List readlist thumbnails",
+        "operationId": "listReadlistThumbnails",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of thumbnails",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["ReadLists"],
+        "summary": "Create readlist thumbnail",
+        "operationId": "createReadlistThumbnail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Thumbnail created" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/thumbnails/{thumbnailId}": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get readlist thumbnail by ID",
+        "operationId": "getReadlistThumbnailById",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "thumbnailId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Thumbnail not found" }
+        }
+      },
+      "delete": {
+        "tags": ["ReadLists"],
+        "summary": "Delete readlist thumbnail",
+        "operationId": "deleteReadlistThumbnail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "thumbnailId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "204": { "description": "Thumbnail deleted" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/thumbnails/{thumbnailId}/selected": {
+      "put": {
+        "tags": ["ReadLists"],
+        "summary": "Mark readlist thumbnail as selected",
+        "operationId": "markReadlistThumbnailSelected",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "thumbnailId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "202": { "description": "Thumbnail marked as selected" }
+        }
+      }
+    },
+    "/api/v1/readlists/{id}/thumbnail": {
+      "get": {
+        "tags": ["ReadLists"],
+        "summary": "Get selected readlist thumbnail",
+        "operationId": "getReadlistThumbnail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thumbnail image",
+            "content": {
+              "image/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Thumbnail not found" }
+        }
+      }
+    },
+    "/api/v1/readlists/match/comicrack": {
+      "post": {
+        "tags": ["ReadLists"],
+        "summary": "Match ComicRack readlist",
+        "operationId": "matchComicrackReadlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created readlist",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadListDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/collections": {
+      "get": {
+        "tags": ["Collections"],
+        "summary": "List all collections",
+        "operationId": "listCollections",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of collections",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionPageDto" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Collections"],
+        "summary": "Create a collection",
+        "operationId": "createCollection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCollectionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Collection created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/collections/{id}": {
+      "get": {
+        "tags": ["Collections"],
+        "summary": "Get collection by ID",
+        "operationId": "getCollection",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionDto" }
+              }
+            }
+          },
+          "404": { "description": "Collection not found" }
+        }
+      },
+      "patch": {
+        "tags": ["Collections"],
+        "summary": "Update collection",
+        "operationId": "updateCollection",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCollectionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Collection updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CollectionDto" }
+              }
+            }
+          },
+          "404": { "description": "Collection not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Collections"],
+        "summary": "Delete collection",
+        "operationId": "deleteCollection",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Collection deleted" },
+          "404": { "description": "Collection not found" }
+        }
+      }
+    },
+    "/api/v1/collections/{id}/series": {
+      "get": {
+        "tags": ["Collections"],
+        "summary": "Get series in a collection",
+        "operationId": "getCollectionSeries",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of series",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/SeriesDto" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "tags": ["Tasks"],
+        "summary": "List all tasks",
+        "operationId": "listTasks",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "size", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of tasks",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TaskPageDto" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Tasks"],
+        "summary": "Delete completed/cancelled tasks",
+        "operationId": "deleteCompletedTasks",
+        "responses": {
+          "204": { "description": "Tasks cleared" }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "get": {
+        "tags": ["Tasks"],
+        "summary": "Get task by ID",
+        "operationId": "getTask",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task details",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TaskDto" }
+              }
+            }
+          },
+          "404": { "description": "Task not found" }
+        }
+      },
+      "delete": {
+        "tags": ["Tasks"],
+        "summary": "Delete a specific task",
+        "operationId": "deleteTask",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "Task deleted" },
+          "404": { "description": "Task not found" }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Search across books and series",
+        "operationId": "search",
+        "parameters": [
+          { "name": "query", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "books": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/BookDto" }
+                    },
+                    "series": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/SeriesDto" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": ["Settings"],
+        "summary": "Get server settings",
+        "operationId": "getSettings",
+        "responses": {
+          "200": {
+            "description": "Server settings as key/value map",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": ["Settings"],
+        "summary": "Update server settings",
+        "operationId": "updateSettings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Settings updated" }
+        }
+      }
+    },
+    "/api/v1/page-hashes": {
+      "get": {
+        "tags": ["Settings"],
+        "summary": "List page hashes",
+        "operationId": "listPageHashes",
+        "responses": {
+          "200": {
+            "description": "Paginated list of page hashes",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/client-settings/global/list": {
+      "get": {
+        "tags": ["Settings"],
+        "summary": "List global client settings",
+        "operationId": "listGlobalClientSettings",
+        "responses": {
+          "200": {
+            "description": "List of client settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": { "type": "string" },
+                      "value": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/syncpoints/me": {
+      "delete": {
+        "tags": ["Settings"],
+        "summary": "Delete sync points",
+        "operationId": "deleteSyncPoints",
+        "responses": {
+          "204": { "description": "Sync points deleted" }
+        }
+      }
+    },
+    "/api/v1/authors": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List authors",
+        "operationId": "listAuthors",
+        "responses": {
+          "200": {
+            "description": "List of author names",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/genres": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List genres",
+        "operationId": "listGenres",
+        "responses": {
+          "200": {
+            "description": "List of genre names",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tags": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List tags",
+        "operationId": "listTags",
+        "responses": {
+          "200": {
+            "description": "List of tag names",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publishers": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List publishers",
+        "operationId": "listPublishers",
+        "responses": {
+          "200": {
+            "description": "List of publisher names",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/languages": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List languages",
+        "operationId": "listLanguages",
+        "responses": {
+          "200": {
+            "description": "List of language codes",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/age-ratings": {
+      "get": {
+        "tags": ["Referential"],
+        "summary": "List age ratings",
+        "operationId": "listAgeRatings",
+        "responses": {
+          "200": {
+            "description": "List of age ratings",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/releases": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get release info",
+        "operationId": "getRelease",
+        "responses": {
+          "200": {
+            "description": "Release information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": { "type": "string" },
+                    "buildDate": { "type": "string" },
+                    "name": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get historical events",
+        "operationId": "getHistory",
+        "responses": {
+          "200": {
+            "description": "List of historical events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/announcements": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get read announcements",
+        "operationId": "getAnnouncements",
+        "responses": {
+          "200": {
+            "description": "List of announcement read statuses",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["System"],
+        "summary": "Mark announcements as read",
+        "operationId": "updateAnnouncements",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Announcements marked as read" }
+        }
+      }
+    },
+    "/api/v1/fonts/families": {
+      "get": {
+        "tags": ["System"],
+        "summary": "List available font families",
+        "operationId": "listFonts",
+        "responses": {
+          "200": {
+            "description": "List of font family names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fonts/resource/{family}/css": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get font face CSS",
+        "operationId": "getFontCss",
+        "parameters": [
+          { "name": "family", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSS stylesheet",
+            "content": {
+              "text/css": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fonts/resource/{family}/{file}": {
+      "get": {
+        "tags": ["System"],
+        "summary": "Get font file",
+        "operationId": "getFontFile",
+        "parameters": [
+          { "name": "family", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "file", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Font file",
+            "content": {
+              "font/*": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": { "description": "Font file not found" }
+        }
+      }
+    },
+    "/api/v1/oauth2/providers": {
+      "get": {
+        "tags": ["Authentication"],
+        "summary": "List configured OAuth2 providers",
+        "operationId": "listOAuth2Providers",
+        "responses": {
+          "200": {
+            "description": "List of OAuth2 providers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/transient-books": {
+      "get": {
+        "tags": ["System"],
+        "summary": "List transient books",
+        "operationId": "listTransientBooks",
+        "responses": {
+          "200": {
+            "description": "Paginated list of transient books",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["System"],
+        "summary": "Create transient book",
+        "operationId": "createTransientBook",
+        "responses": {
+          "200": { "description": "Transient book created" }
+        }
+      }
+    },
+    "/api/v1/api-keys": {
+      "get": {
+        "tags": ["API Keys"],
+        "summary": "List all API keys (admin)",
+        "operationId": "listAllApiKeys",
+        "responses": {
+          "200": {
+            "description": "List of API keys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/ApiKeyDto" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["API Keys"],
+        "summary": "Create API key",
+        "operationId": "createGlobalApiKey",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" }
+                },
+                "required": ["name"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "API key created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiKeyDto" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys/{id}": {
+      "delete": {
+        "tags": ["API Keys"],
+        "summary": "Delete API key",
+        "operationId": "deleteGlobalApiKey",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "204": { "description": "API key deleted" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": { "type": "string" }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 6 }
+        }
+      },
+      "UserDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "sharedAllLibraries": { "type": "boolean" }
+        }
+      },
+      "LibraryDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "root": { "type": "string" },
+          "importComicInfoBook": { "type": "boolean" },
+          "importComicInfoSeries": { "type": "boolean" },
+          "importComicInfoCollection": { "type": "boolean" },
+          "importEpubBook": { "type": "boolean" },
+          "importEpubSeries": { "type": "boolean" },
+          "scanForceModifiedTime": { "type": "boolean" },
+          "scanOnStartup": { "type": "boolean" },
+          "importLocalArtwork": { "type": "boolean" },
+          "importComicInfoReadList": { "type": "boolean" },
+          "importBarcodeIsbn": { "type": "boolean" },
+          "convertToCbz": { "type": "boolean" },
+          "repairExtensions": { "type": "boolean" },
+          "emptyTrashAfterScan": { "type": "boolean" },
+          "importMylarSeries": { "type": "boolean" },
+          "seriesCover": { "type": "string" },
+          "scanDirectoryExclusions": { "type": "array", "items": { "type": "string" } },
+          "scanCbx": { "type": "boolean" },
+          "scanPdf": { "type": "boolean" },
+          "scanEpub": { "type": "boolean" },
+          "scanInterval": { "type": "string" },
+          "hashFiles": { "type": "boolean" },
+          "hashPages": { "type": "boolean" },
+          "analyzeDimensions": { "type": "boolean" },
+          "importComicInfoSeriesAppendVolume": { "type": "boolean" },
+          "hashKoreader": { "type": "boolean" },
+          "oneshotsDirectory": { "type": "string", "nullable": true },
+          "unavailable": { "type": "boolean", "nullable": true }
+        }
+      },
+      "BookMetadataAggregationDto": {
+        "type": "object",
+        "properties": {
+          "booksCount": { "type": "integer" },
+          "booksInProgressCount": { "type": "integer" },
+          "booksReadCount": { "type": "integer" },
+          "booksUnreadCount": { "type": "integer" }
+        }
+      },
+      "SeriesDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "libraryId": { "type": "string", "format": "uuid" },
+          "booksCount": { "type": "integer" },
+          "booksInProgressCount": { "type": "integer" },
+          "booksReadCount": { "type": "integer" },
+          "booksUnreadCount": { "type": "integer" },
+          "oneshot": { "type": "boolean" },
+          "deleted": { "type": "boolean" },
+          "created": { "type": "string", "format": "date-time" },
+          "lastModified": { "type": "string", "format": "date-time" },
+          "fileLastModified": { "type": "string", "format": "date-time", "nullable": true },
+          "booksMetadata": { "$ref": "#/components/schemas/BookMetadataAggregationDto" },
+          "metadata": { "$ref": "#/components/schemas/SeriesMetadataDto" }
+        }
+      },
+      "SeriesPageDto": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/SeriesDto" } },
+          "totalElements": { "type": "integer" },
+          "totalPages": { "type": "integer" },
+          "number": { "type": "integer" },
+          "size": { "type": "integer" },
+          "empty": { "type": "boolean" },
+          "first": { "type": "boolean" },
+          "last": { "type": "boolean" },
+          "numberOfElements": { "type": "integer" }
+        }
+      },
+      "SeriesMetadataDto": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "statusLock": { "type": "boolean" },
+          "title": { "type": "string" },
+          "titleLock": { "type": "boolean" },
+          "titleSort": { "type": "string" },
+          "titleSortLock": { "type": "boolean" },
+          "publisher": { "type": "string" },
+          "publisherLock": { "type": "boolean" },
+          "readingDirection": { "type": "string" },
+          "readingDirectionLock": { "type": "boolean" },
+          "ageRating": { "type": "integer", "nullable": true },
+          "ageRatingLock": { "type": "boolean" },
+          "summary": { "type": "string" },
+          "summaryLock": { "type": "boolean" },
+          "language": { "type": "string" },
+          "languageLock": { "type": "boolean" },
+          "genres": { "type": "array", "items": { "type": "string" } },
+          "genresLock": { "type": "boolean" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "tagsLock": { "type": "boolean" },
+          "totalBookCount": { "type": "integer", "nullable": true },
+          "totalBookCountLock": { "type": "boolean" },
+          "sharingLabels": { "type": "array", "items": { "type": "string" } },
+          "sharingLabelsLock": { "type": "boolean" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/MetadataLinkDto" } },
+          "linksLock": { "type": "boolean" },
+          "alternateTitles": { "type": "array", "items": { "$ref": "#/components/schemas/AlternateTitleDto" } },
+          "alternateTitlesLock": { "type": "boolean" },
+          "created": { "type": "string", "format": "date-time" },
+          "lastModified": { "type": "string", "format": "date-time" }
+        }
+      },
+      "MetadataLinkDto": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "url": { "type": "string", "format": "uri" }
+        }
+      },
+      "AlternateTitleDto": {
+        "type": "object",
+        "properties": {
+          "label": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      },
+      "BookDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "url": { "type": "string" },
+          "seriesId": { "type": "string", "format": "uuid" },
+          "seriesTitle": { "type": "string" },
+          "number": { "type": "integer" },
+          "oneshot": { "type": "boolean" },
+          "fileHash": { "type": "string" },
+          "sizeBytes": { "type": "integer", "format": "int64" },
+          "size": { "type": "string" },
+          "libraryId": { "type": "string", "format": "uuid" },
+          "created": { "type": "string", "format": "date-time" },
+          "lastModified": { "type": "string", "format": "date-time" },
+          "fileLastModified": { "type": "string", "format": "date-time", "nullable": true },
+          "deleted": { "type": "boolean" },
+          "media": { "$ref": "#/components/schemas/MediaDto" },
+          "metadata": { "$ref": "#/components/schemas/BookMetadataDto" },
+          "readProgress": { "$ref": "#/components/schemas/ReadProgressDto" }
+        }
+      },
+      "BookPageDto": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/BookDto" } },
+          "totalElements": { "type": "integer" },
+          "totalPages": { "type": "integer" },
+          "number": { "type": "integer" },
+          "size": { "type": "integer" },
+          "empty": { "type": "boolean" },
+          "first": { "type": "boolean" },
+          "last": { "type": "boolean" },
+          "numberOfElements": { "type": "integer" }
+        }
+      },
+      "BookMetadataDto": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "string" },
+          "numberLock": { "type": "boolean" },
+          "numberSort": { "type": "number", "format": "float" },
+          "numberSortLock": { "type": "boolean" },
+          "releaseDate": { "type": "string", "nullable": true },
+          "releaseDateLock": { "type": "boolean" },
+          "summary": { "type": "string" },
+          "summaryLock": { "type": "boolean" },
+          "title": { "type": "string" },
+          "titleLock": { "type": "boolean" },
+          "authors": { "type": "array", "items": { "$ref": "#/components/schemas/AuthorDto" } },
+          "authorsLock": { "type": "boolean" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "tagsLock": { "type": "boolean" },
+          "isbn": { "type": "string", "nullable": true },
+          "isbnLock": { "type": "boolean" },
+          "links": { "type": "array", "items": { "$ref": "#/components/schemas/MetadataLinkDto" } },
+          "linksLock": { "type": "boolean" },
+          "created": { "type": "string", "format": "date-time" },
+          "lastModified": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuthorDto": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "role": { "type": "string" }
+        }
+      },
+      "MediaDto": {
+        "type": "object",
+        "properties": {
+          "fileSize": { "type": "integer", "format": "int64" },
+          "mediaType": { "type": "string" },
+          "width": { "type": "integer", "nullable": true },
+          "height": { "type": "integer", "nullable": true },
+          "pagesCount": { "type": "integer" },
+          "status": { "type": "string" }
+        }
+      },
+      "PageDto": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "integer" },
+          "fileName": { "type": "string" },
+          "mediaType": { "type": "string" },
+          "width": { "type": "integer", "nullable": true },
+          "height": { "type": "integer", "nullable": true },
+          "sizeBytes": { "type": "integer", "format": "int64", "nullable": true },
+          "size": { "type": "string", "nullable": true }
+        }
+      },
+      "ReadProgressDto": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer" },
+          "completed": { "type": "boolean" },
+          "readDate": { "type": "string", "format": "date-time", "nullable": true },
+          "deviceId": { "type": "string", "nullable": true },
+          "deviceName": { "type": "string", "nullable": true },
+          "created": { "type": "string", "format": "date-time", "nullable": true },
+          "lastModified": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "ReadProgressUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "nullable": true },
+          "completed": { "type": "boolean", "nullable": true }
+        }
+      },
+      "ReadListDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "summary": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "filtered": { "type": "boolean" },
+          "bookIds": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+          "createdDate": { "type": "string", "format": "date-time" },
+          "lastModifiedDate": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ReadListPageDto": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/ReadListDto" } },
+          "totalElements": { "type": "integer" },
+          "totalPages": { "type": "integer" },
+          "number": { "type": "integer" },
+          "size": { "type": "integer" },
+          "empty": { "type": "boolean" },
+          "first": { "type": "boolean" },
+          "last": { "type": "boolean" },
+          "numberOfElements": { "type": "integer" }
+        }
+      },
+      "CreateReadListRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "summary": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "bookIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "UpdateReadListRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "summary": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "bookIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "CollectionDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "filtered": { "type": "boolean" },
+          "seriesIds": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+          "createdDate": { "type": "string", "format": "date-time" },
+          "lastModifiedDate": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CollectionPageDto": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/CollectionDto" } },
+          "totalElements": { "type": "integer" },
+          "totalPages": { "type": "integer" },
+          "number": { "type": "integer" },
+          "size": { "type": "integer" },
+          "empty": { "type": "boolean" },
+          "first": { "type": "boolean" },
+          "last": { "type": "boolean" },
+          "numberOfElements": { "type": "integer" }
+        }
+      },
+      "CreateCollectionRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "seriesIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "UpdateCollectionRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "ordered": { "type": "boolean" },
+          "seriesIds": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+        }
+      },
+      "TaskDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "taskType": { "type": "string" },
+          "status": { "type": "string" },
+          "priority": { "type": "integer" },
+          "createdDate": { "type": "string", "format": "date-time" },
+          "scheduledDate": { "type": "string", "format": "date-time", "nullable": true },
+          "executionStartDate": { "type": "string", "format": "date-time", "nullable": true },
+          "executionEndDate": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "TaskPageDto": {
+        "type": "object",
+        "properties": {
+          "content": { "type": "array", "items": { "$ref": "#/components/schemas/TaskDto" } },
+          "totalElements": { "type": "integer" },
+          "totalPages": { "type": "integer" },
+          "number": { "type": "integer" },
+          "size": { "type": "integer" },
+          "empty": { "type": "boolean" },
+          "first": { "type": "boolean" },
+          "last": { "type": "boolean" },
+          "numberOfElements": { "type": "integer" }
+        }
+      },
+      "ApiKeyDto": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "comment": { "type": "string" },
+          "key": { "type": "string" },
+          "createdDate": { "type": "string", "format": "date-time" },
+          "lastModifiedDate": { "type": "string", "format": "date-time", "nullable": true },
+          "userId": { "type": "string", "format": "uuid" }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Authentication", "description": "Authentication, claim, login, logout, OAuth2" },
+    { "name": "Users", "description": "User management CRUD" },
+    { "name": "Libraries", "description": "Library management, scanning, analysis" },
+    { "name": "Series", "description": "Series listing, metadata, read progress, Tachiyomi sync" },
+    { "name": "Books", "description": "Book listing, pages, reading progress, covers, import" },
+    { "name": "ReadLists", "description": "Read list CRUD, books, thumbnails, Tachiyomi sync" },
+    { "name": "Collections", "description": "Collection CRUD and series membership" },
+    { "name": "Tasks", "description": "Background task queue management" },
+    { "name": "Search", "description": "Full-text search across books and series" },
+    { "name": "Settings", "description": "Server and client settings, page hashes" },
+    { "name": "Referential", "description": "Referential data (authors, genres, tags, publishers)" },
+    { "name": "API Keys", "description": "API key management" },
+    { "name": "System", "description": "System information, release info, fonts, history" }
+  ]
+}

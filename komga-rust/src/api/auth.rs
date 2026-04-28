@@ -280,7 +280,7 @@ async fn get_api_keys(State(pool): State<PgPool>) -> Json<Vec<serde_json::Value>
             "name": k.name,
             "key": k.key,
             "createdDate": k.created_date.to_rfc3339(),
-            "lastUsedDate": k.last_used_date.map(|d| d.to_rfc3339()),
+            "lastModifiedDate": k.last_used_date.map(|d| d.to_rfc3339()),
         })
     }).collect())
 }

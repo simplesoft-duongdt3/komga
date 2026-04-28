@@ -25,7 +25,7 @@ impl LibraryRepository {
              "SERIES_COVER", "UNAVAILABLE_DATE", "HASH_FILES", "HASH_PAGES", "ANALYZE_DIMENSIONS",
              "IMPORT_COMICINFO_SERIES_APPEND_VOLUME", "ONESHOTS_DIRECTORY", "SCAN_CBX", "SCAN_PDF",
              "SCAN_EPUB", "SCAN_INTERVAL", "HASH_KOREADER")
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)
             RETURNING *"#
         )
         .bind(library.id.to_string())
@@ -95,6 +95,37 @@ impl LibraryRepository {
         .await?;
 
         Ok(())
+    }
+
+    pub async fn update(&self, library: &Library) -> Result<Library, sqlx::Error> {
+        let row = sqlx::query(
+            r#"UPDATE "LIBRARY" SET
+            "NAME" = $2, "ROOT" = $3, "LAST_MODIFIED_DATE" = CURRENT_TIMESTAMP,
+            "IMPORT_COMICINFO_BOOK" = $4, "IMPORT_COMICINFO_SERIES" = $5,
+            "IMPORT_EPUB_BOOK" = $6, "IMPORT_EPUB_SERIES" = $7,
+            "IMPORT_LOCAL_ARTWORK" = $8, "IMPORT_BARCODE_ISBN" = $9,
+            "CONVERT_TO_CBZ" = $10, "HASH_FILES" = $11, "HASH_PAGES" = $12,
+            "ANALYZE_DIMENSIONS" = $13
+            WHERE "ID" = $1
+            RETURNING *"#
+        )
+        .bind(library.id.to_string())
+        .bind(&library.name)
+        .bind(&library.root)
+        .bind(library.import_comicinfo_book)
+        .bind(library.import_comicinfo_series)
+        .bind(library.import_epub_book)
+        .bind(library.import_epub_series)
+        .bind(library.import_local_artwork)
+        .bind(library.import_barcode_isbn)
+        .bind(library.convert_to_cbz)
+        .bind(library.hash_files)
+        .bind(library.hash_pages)
+        .bind(library.analyze_dimensions)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row_to_library(row))
     }
 }
 

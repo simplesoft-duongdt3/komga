@@ -7,11 +7,25 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 
 use axum::Router;
+use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
 use tower_http::services::ServeDir;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::infrastructure::db::Database;
+
+pub fn create_app(pool: PgPool) -> Router {
+    let webui_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join("webui-dist");
+    
+    Router::new()
+        .merge(api::routes())
+        .nest_service("/ui", ServeDir::new(&webui_path))
+        .fallback_service(ServeDir::new(&webui_path))
+        .layer(TraceLayer::new_for_http())
+        .with_state(pool)
+}
 
 pub async fn run() {
     tracing_subscriber::registry()
@@ -32,13 +46,8 @@ pub async fn run() {
         .join("webui-dist");
     
     tracing::info!("Serving webui from: {:?}", webui_path);
-    
-    let app = Router::new()
-        .merge(api::routes())
-        .nest_service("/ui", ServeDir::new(&webui_path))
-        .fallback_service(ServeDir::new(&webui_path))
-        .layer(TraceLayer::new_for_http())
-        .with_state(pool);
+
+    let app = create_app(pool);
 
     let addr = SocketAddr::from_str("0.0.0.0:8080").unwrap();
     tracing::info!("Listening on {}", addr);

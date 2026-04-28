@@ -119,6 +119,20 @@ impl ReadListRepository {
 
         Ok(rows.into_iter().map(|r| r.get::<String, _>("BOOK_ID")).collect())
     }
+
+    pub async fn find_by_book(&self, book_id: Uuid) -> Result<Vec<ReadList>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT r.* FROM "READLIST" r
+            INNER JOIN "READLIST_BOOK" rb ON rb."READLIST_ID" = r."ID"
+            WHERE rb."BOOK_ID" = $1
+            ORDER BY r."NAME""#
+        )
+        .bind(book_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_readlist).collect())
+    }
 }
 
 fn row_to_readlist(row: sqlx::postgres::PgRow) -> ReadList {

@@ -10,10 +10,11 @@ use uuid::Uuid;
 use std::path::PathBuf;
 use std::fs;
 
-use crate::api::dto::{BookDto, BookPageDto, PageDto, ReadProgressDto, ReadProgressUpdateRequest, BookMetadataDto};
-use crate::domain::repository::{BookRepository, ReadProgressRepository};
+use crate::api::dto::{BookDto, BookPageDto, PageDto, ReadProgressDto, ReadProgressUpdateRequest, BookMetadataDto, ReadListDto};
+use crate::domain::repository::{BookRepository, ReadProgressRepository, TaskRepository, ReadListRepository};
 use crate::domain::model::read_progress::ReadProgress;
 use crate::domain::model::book::BookMetadata;
+use crate::domain::model::task::{Task, TaskData, TaskType};
 use crate::infrastructure::mediacontainer::{cbz::CbzExtractor, epub::EpubExtractor, pdf::PdfExtractor, BookExtractor};
 use crate::infrastructure::mediacontainer::image::ImageProcessor;
 
@@ -538,29 +539,43 @@ async fn get_books_latest(
 }
 
 async fn get_books_ondeck(
-    State(_pool): State<PgPool>,
+    State(pool): State<PgPool>,
     Query(_params): Query<PageParams>,
 ) -> Result<Json<BookPageDto>, axum::response::Response> {
-    Ok(Json(BookPageDto {
-        content: vec![],
-        total_elements: 0,
-        total_pages: 0,
-        number: 0,
-        size: _params.size,
-    }))
+    let repo = BookRepository::new(pool);
+    match repo.find_ondeck(_params.size).await {
+        Ok(books) => {
+            let total = books.len();
+            Ok(Json(BookPageDto {
+                content: books.into_iter().map(|b| b.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: 0,
+                size: _params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 async fn get_books_duplicates(
-    State(_pool): State<PgPool>,
+    State(pool): State<PgPool>,
     Query(_params): Query<PageParams>,
 ) -> Result<Json<BookPageDto>, axum::response::Response> {
-    Ok(Json(BookPageDto {
-        content: vec![],
-        total_elements: 0,
-        total_pages: 0,
-        number: 0,
-        size: _params.size,
-    }))
+    let repo = BookRepository::new(pool);
+    match repo.find_duplicates().await {
+        Ok(books) => {
+            let total = books.len();
+            Ok(Json(BookPageDto {
+                content: books.into_iter().map(|b| b.into()).collect(),
+                total_elements: total,
+                total_pages: 1,
+                number: 0,
+                size: _params.size,
+            }))
+        }
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 async fn get_book_previous(
@@ -602,10 +617,16 @@ async fn get_book_next(
 }
 
 async fn get_book_readlists(
-    State(_pool): State<PgPool>,
-    Path(_book_id): Path<String>,
-) -> Result<Json<Vec<serde_json::Value>>, axum::response::Response> {
-    Ok(Json(vec![]))
+    State(pool): State<PgPool>,
+    Path(book_id): Path<String>,
+) -> Result<Json<Vec<ReadListDto>>, axum::response::Response> {
+    let book_uuid = Uuid::parse_str(&book_id).unwrap_or_default();
+    let readlist_repo = ReadListRepository::new(pool);
+    
+    match readlist_repo.find_by_book(book_uuid).await {
+        Ok(readlists) => Ok(Json(readlists.into_iter().map(|r| r.into()).collect())),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 async fn get_book_manifest(
@@ -642,16 +663,32 @@ async fn get_book_positions(
 }
 
 async fn analyze_book(
-    State(_pool): State<PgPool>,
-    Path(_book_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(book_id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::AnalyzeBook,
+        TaskData::AnalyzeBook { book_id: book_id.clone() },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
 async fn refresh_book_metadata(
-    State(_pool): State<PgPool>,
-    Path(_book_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(book_id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::RefreshBookMetadata,
+        TaskData::RefreshBookMetadata { book_id: book_id.clone(), capabilities: vec![] },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
@@ -675,24 +712,55 @@ struct BookImportBatchDto {
 }
 
 async fn import_books(
-    State(_pool): State<PgPool>,
+    State(pool): State<PgPool>,
     Json(batch): Json<BookImportBatchDto>,
 ) -> Result<axum::response::Response, axum::response::Response> {
-    let _count = batch.books.len();
+    let task_repo = TaskRepository::new(pool.clone());
+    for book in &batch.books {
+        let task = Task::new(
+            TaskType::ImportBook,
+            TaskData::ImportBook {
+                source_file: book.source_file.clone(),
+                series_id: book.series_id.clone(),
+                copy_mode: batch.copy_mode.clone().unwrap_or_else(|| "HARDLINK".to_string()),
+            },
+            4,
+        );
+        task_repo.create(&task).await
+            .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+    }
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
 async fn delete_book_file(
-    State(_pool): State<PgPool>,
-    Path(_book_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(book_id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::DeleteBook,
+        TaskData::DeleteBook { book_id: book_id.clone() },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
 async fn regenerate_book_thumbnails(
-    State(_pool): State<PgPool>,
+    State(pool): State<PgPool>,
     Query(_params): Query<RegenerateParams>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::FindBookThumbnailsToRegenerate,
+        TaskData::FindBookThumbnailsToRegenerate {
+            for_bigger_result_only: _params.for_bigger_result_only,
+        },
+        2,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 

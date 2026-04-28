@@ -208,6 +208,33 @@ impl SeriesRepository {
 
         Ok(rows.into_iter().map(row_to_series).collect())
     }
+
+    pub async fn search_by_name(&self, query: &str, limit: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "NAME" ILIKE $1 AND "DELETED_DATE" IS NULL ORDER BY "NAME" ASC LIMIT $2"#
+        )
+        .bind(&pattern)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn find_by_collection(&self, collection_id: Uuid) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT s.* FROM "SERIES" s
+            INNER JOIN "COLLECTION_SERIES" cs ON cs."SERIES_ID" = s."ID"
+            WHERE cs."COLLECTION_ID" = $1 AND s."DELETED_DATE" IS NULL
+            ORDER BY cs."NUMBER""#
+        )
+        .bind(collection_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
 }
 
 fn row_to_series(row: sqlx::postgres::PgRow) -> Series {

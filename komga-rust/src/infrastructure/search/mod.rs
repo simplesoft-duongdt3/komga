@@ -67,7 +67,7 @@ impl SearchIndex {
         Ok(())
     }
 
-    pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
         let reader = self.index.reader()?;
         let searcher = reader.searcher();
         

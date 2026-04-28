@@ -11,7 +11,7 @@ pub struct User {
     pub password: String,
     pub shared_all_libraries: bool,
     pub age_restriction: Option<i32>,
-    pub age_restriction_allow_only: bool,
+    pub age_restriction_allow_only: Option<bool>,
     pub roles: Vec<UserRole>,
 }
 
@@ -35,7 +35,7 @@ impl User {
             password,
             shared_all_libraries: true,
             age_restriction: None,
-            age_restriction_allow_only: false,
+            age_restriction_allow_only: None,
             roles: vec![UserRole::PageViewer],
         }
     }

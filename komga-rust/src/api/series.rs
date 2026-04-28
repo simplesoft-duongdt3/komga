@@ -7,12 +7,17 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::io::{Write, Cursor};
 use std::path::PathBuf;
 use std::fs;
+use zip::write::FileOptions;
+use zip::CompressionMethod;
 
-use crate::api::dto::{SeriesDto, SeriesPageDto, SeriesMetadataDto};
-use crate::domain::repository::SeriesRepository;
+use crate::api::dto::{SeriesDto, SeriesPageDto, SeriesMetadataDto, CollectionDto};
+use crate::domain::repository::{SeriesRepository, BookRepository, ReadProgressRepository, TaskRepository, CollectionRepository};
 use crate::domain::model::series::SeriesMetadata;
+use crate::domain::model::read_progress::ReadProgress;
+use crate::domain::model::task::{Task, TaskData, TaskType};
 
 #[derive(Deserialize)]
 struct PageParams {
@@ -378,52 +383,139 @@ async fn list_series_alphabetical_groups(
 }
 
 async fn get_series_collections(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
-) -> Result<Json<Vec<serde_json::Value>>, axum::response::Response> {
-    Ok(Json(vec![]))
+    State(pool): State<PgPool>,
+    Path(series_id): Path<String>,
+) -> Result<Json<Vec<CollectionDto>>, axum::response::Response> {
+    let series_uuid = Uuid::parse_str(&series_id).unwrap_or_default();
+    let repo = CollectionRepository::new(pool);
+    
+    match repo.find_by_series(series_uuid).await {
+        Ok(collections) => Ok(Json(collections.into_iter().map(|c| c.into()).collect())),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }
 
 async fn analyze_series(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::AnalyzeBook,
+        TaskData::AnalyzeBook { book_id: id.clone() },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
 async fn refresh_series_metadata(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::RefreshSeriesMetadata,
+        TaskData::RefreshSeriesMetadata { series_id: id.clone() },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 
 async fn mark_series_read_progress(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let series_uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let book_repo = BookRepository::new(pool.clone());
+    let progress_repo = ReadProgressRepository::new(pool.clone());
+    let user_id = Uuid::nil();
+
+    let books = book_repo.find_by_series(series_uuid).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+
+    for book in books {
+        let progress = ReadProgress::new(book.id, user_id, 1, true);
+        let _ = progress_repo.upsert(&progress).await;
+    }
+
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
 async fn delete_series_read_progress(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let series_uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let book_repo = BookRepository::new(pool.clone());
+    let progress_repo = ReadProgressRepository::new(pool.clone());
+    let user_id = Uuid::nil();
+
+    let books = book_repo.find_by_series(series_uuid).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+
+    for book in books {
+        let _ = progress_repo.delete(book.id, user_id).await;
+    }
+
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
 async fn get_series_read_progress_tachiyomi(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    Ok(Json(serde_json::json!({})))
+    let series_uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let book_repo = BookRepository::new(pool.clone());
+    let progress_repo = ReadProgressRepository::new(pool);
+    let user_id = Uuid::nil();
+
+    let books = book_repo.find_by_series(series_uuid).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+
+    let mut read_chapters = Vec::new();
+    for book in &books {
+        if let Ok(Some(progress)) = progress_repo.find_by_book_and_user(book.id, user_id).await {
+            if progress.completed || progress.page > 0 {
+                read_chapters.push(book.number);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "mangaId": id,
+        "readChapters": read_chapters,
+    })))
 }
 
 async fn update_series_read_progress_tachiyomi(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
-    Json(_body): Json<serde_json::Value>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let series_uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let book_repo = BookRepository::new(pool.clone());
+    let progress_repo = ReadProgressRepository::new(pool);
+    let user_id = Uuid::nil();
+
+    let read_chapters: Vec<i32> = body.get("readChapters")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_i64().map(|n| n as i32)).collect())
+        .unwrap_or_default();
+
+    let books = book_repo.find_by_series(series_uuid).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+
+    for book in &books {
+        let completed = read_chapters.contains(&book.number);
+        let page = if completed { 1 } else { 0 };
+        let progress = ReadProgress::new(book.id, user_id, page, completed);
+        let _ = progress_repo.upsert(&progress).await;
+    }
+
     Ok((axum::http::StatusCode::NO_CONTENT, "").into_response())
 }
 
@@ -457,16 +549,79 @@ async fn get_series_thumbnail(
 }
 
 async fn get_series_file(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
-    Err((axum::http::StatusCode::NOT_IMPLEMENTED, "Series file download not implemented").into_response())
+    let series_uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let series_repo = SeriesRepository::new(pool.clone());
+    let book_repo = BookRepository::new(pool);
+    
+    let series = match series_repo.find_by_id(series_uuid).await {
+        Ok(Some(s)) => s,
+        Ok(None) => return Err((axum::http::StatusCode::NOT_FOUND, "Series not found").into_response()),
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    let books = match book_repo.find_by_series(series_uuid).await {
+        Ok(b) => b,
+        Err(e) => return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    };
+    
+    if books.is_empty() {
+        return Err((axum::http::StatusCode::NOT_FOUND, "No books in series").into_response());
+    }
+    
+    let mut zip_buffer = Cursor::new(Vec::new());
+    let mut zip_writer = zip::ZipWriter::new(&mut zip_buffer);
+    let options = FileOptions::<()>::default().compression_method(CompressionMethod::Deflated);
+    
+    for book in &books {
+        let book_path = PathBuf::from(&book.url);
+        if let Ok(data) = fs::read(&book_path) {
+            let name = book_path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("{}.cbz", book.id));
+            if let Err(e) = zip_writer.start_file(&name, options) {
+                tracing::warn!("Failed to add {} to ZIP: {}", name, e);
+                continue;
+            }
+            if let Err(e) = zip_writer.write_all(&data) {
+                tracing::warn!("Failed to write {} to ZIP: {}", name, e);
+                continue;
+            }
+        }
+    }
+    
+    if let Err(e) = zip_writer.finish() {
+        return Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response());
+    }
+    let data = zip_buffer.into_inner();
+    
+    let filename = format!("{}.zip", series.name.replace(' ', "_"));
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+    
+    Ok((
+        axum::http::StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/zip"),
+            (axum::http::header::CONTENT_DISPOSITION, disposition.as_str()),
+        ],
+        data,
+    ).into_response())
 }
 
 async fn delete_series_file(
-    State(_pool): State<PgPool>,
-    Path(_id): Path<String>,
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
 ) -> Result<axum::response::Response, axum::response::Response> {
+    let task_repo = TaskRepository::new(pool.clone());
+    let task = Task::new(
+        TaskType::DeleteSeries,
+        TaskData::DeleteSeries { series_id: id.clone() },
+        4,
+    );
+    task_repo.create(&task).await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     Ok((axum::http::StatusCode::ACCEPTED, "").into_response())
 }
 

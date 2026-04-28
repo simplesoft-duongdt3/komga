@@ -117,6 +117,20 @@ impl CollectionRepository {
 
         Ok(rows.into_iter().map(|r| r.get::<String, _>("SERIES_ID")).collect())
     }
+
+    pub async fn find_by_series(&self, series_id: Uuid) -> Result<Vec<Collection>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT c.* FROM "COLLECTION" c
+            INNER JOIN "COLLECTION_SERIES" cs ON cs."COLLECTION_ID" = c."ID"
+            WHERE cs."SERIES_ID" = $1
+            ORDER BY c."NAME""#
+        )
+        .bind(series_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_collection).collect())
+    }
 }
 
 fn row_to_collection(row: sqlx::postgres::PgRow) -> Collection {

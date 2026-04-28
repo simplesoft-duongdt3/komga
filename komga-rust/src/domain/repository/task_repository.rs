@@ -86,6 +86,16 @@ impl TaskRepository {
 
         Ok(result.map(row_to_task))
     }
+
+    pub async fn delete_completed(&self) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"DELETE FROM "TASK" WHERE "STATUS" IN ('COMPLETED', 'CANCELLED')"#
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
 }
 
 fn row_to_task(row: sqlx::postgres::PgRow) -> Task {

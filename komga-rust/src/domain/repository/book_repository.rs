@@ -275,6 +275,50 @@ impl BookRepository {
 
         Ok(result.map(row_to_book))
     }
+
+    pub async fn search_by_name(&self, query: &str, limit: usize) -> Result<Vec<Book>, sqlx::Error> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "NAME" ILIKE $1 AND "DELETED_DATE" IS NULL ORDER BY "LAST_MODIFIED_DATE" DESC LIMIT $2"#
+        )
+        .bind(&pattern)
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
+
+    pub async fn find_ondeck(&self, limit: usize) -> Result<Vec<Book>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT DISTINCT b.* FROM "BOOK" b
+            INNER JOIN "READ_PROGRESS" rp ON rp."BOOK_ID" = b."ID"
+            WHERE b."DELETED_DATE" IS NULL AND rp."COMPLETED" = false AND rp."PAGE" > 0
+            ORDER BY rp."LAST_MODIFIED_DATE" DESC LIMIT $1"#
+        )
+        .bind(limit as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
+
+    pub async fn find_duplicates(&self) -> Result<Vec<Book>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT b.* FROM "BOOK" b
+            INNER JOIN (
+                SELECT "FILE_HASH" FROM "BOOK"
+                WHERE "FILE_HASH" != '' AND "DELETED_DATE" IS NULL
+                GROUP BY "FILE_HASH" HAVING COUNT(*) > 1
+            ) dup ON b."FILE_HASH" = dup."FILE_HASH"
+            WHERE b."DELETED_DATE" IS NULL
+            ORDER BY b."FILE_HASH""#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
 }
 
 fn row_to_book(row: sqlx::postgres::PgRow) -> Book {

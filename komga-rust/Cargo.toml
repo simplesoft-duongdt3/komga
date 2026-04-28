@@ -40,6 +40,10 @@ sha2 = "0.10"
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.4", features = ["util"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres", "redis"] }
+reqwest = { version = "0.12", features = ["json", "cookies"] }
+tokio-retry = "0.3"
 
 [lib]
 name = "komga_rust"

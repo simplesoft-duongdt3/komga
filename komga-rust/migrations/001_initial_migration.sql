@@ -5,8 +5,8 @@
 CREATE TABLE "LIBRARY"
 (
     "ID"                                  varchar   NOT NULL PRIMARY KEY,
-    "CREATED_DATE"                        timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE"                  timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"                        timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE"                  timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "NAME"                                varchar   NOT NULL,
     "ROOT"                                varchar   NOT NULL,
     "IMPORT_COMICINFO_BOOK"               boolean   NOT NULL DEFAULT true,
@@ -24,7 +24,7 @@ CREATE TABLE "LIBRARY"
     "EMPTY_TRASH_AFTER_SCAN"              boolean   NOT NULL DEFAULT false,
     "IMPORT_MYLAR_SERIES"                 boolean   NOT NULL DEFAULT true,
     "SERIES_COVER"                        varchar   NOT NULL DEFAULT 'FIRST',
-    "UNAVAILABLE_DATE"                    timestamp NULL DEFAULT NULL,
+    "UNAVAILABLE_DATE"                    timestamptz NULL DEFAULT NULL,
     "HASH_FILES"                          boolean   NOT NULL DEFAULT true,
     "HASH_PAGES"                          boolean   NOT NULL DEFAULT false,
     "ANALYZE_DIMENSIONS"                  boolean   NOT NULL DEFAULT true,
@@ -40,8 +40,8 @@ CREATE TABLE "LIBRARY"
 CREATE TABLE "USER"
 (
     "ID"                         varchar   NOT NULL PRIMARY KEY,
-    "CREATED_DATE"               timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE"         timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"               timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE"         timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "EMAIL"                      varchar   NOT NULL UNIQUE,
     "PASSWORD"                   varchar   NOT NULL,
     "SHARED_ALL_LIBRARIES"       boolean   NOT NULL DEFAULT true,
@@ -61,22 +61,22 @@ CREATE TABLE "USER_LIBRARY_SHARING"
 CREATE TABLE "SERIES"
 (
     "ID"                 varchar   NOT NULL PRIMARY KEY,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "FILE_LAST_MODIFIED" timestamp NOT NULL,
     "NAME"               varchar   NOT NULL,
     "URL"                varchar   NOT NULL,
     "LIBRARY_ID"         varchar   NOT NULL,
     "BOOK_COUNT"         integer   NOT NULL DEFAULT 0,
-    "DELETED_DATE"       timestamp NULL DEFAULT NULL,
+    "DELETED_DATE"       timestamptz NULL DEFAULT NULL,
     "oneshot"            boolean   NOT NULL DEFAULT false,
     FOREIGN KEY ("LIBRARY_ID") REFERENCES "LIBRARY" ("ID")
 );
 
 CREATE TABLE "SERIES_METADATA"
 (
-    "CREATED_DATE"         timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE"   timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"         timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE"   timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "STATUS"               varchar   NOT NULL,
     "STATUS_LOCK"          boolean   NOT NULL DEFAULT false,
     "TITLE"                varchar   NOT NULL,
@@ -107,8 +107,8 @@ CREATE TABLE "SERIES_METADATA"
 CREATE TABLE "BOOK"
 (
     "ID"                 varchar   NOT NULL PRIMARY KEY,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "FILE_LAST_MODIFIED" timestamp NOT NULL,
     "NAME"               varchar   NOT NULL,
     "URL"                varchar   NOT NULL,
@@ -117,7 +117,7 @@ CREATE TABLE "BOOK"
     "NUMBER"             integer   NOT NULL DEFAULT 0,
     "LIBRARY_ID"         varchar   NOT NULL,
     "FILE_HASH"          varchar   NOT NULL DEFAULT '',
-    "DELETED_DATE"       timestamp NULL DEFAULT NULL,
+    "DELETED_DATE"       timestamptz NULL DEFAULT NULL,
     "oneshot"            boolean   NOT NULL DEFAULT false,
     "FILE_HASH_KOREADER" varchar   NOT NULL DEFAULT '',
     FOREIGN KEY ("LIBRARY_ID") REFERENCES "LIBRARY" ("ID"),
@@ -162,8 +162,8 @@ CREATE TABLE "COLLECTION"
     "NAME"               varchar   NOT NULL,
     "ORDERED"            boolean   NOT NULL DEFAULT false,
     "SERIES_COUNT"       integer   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "COLLECTION_SERIES"
@@ -183,8 +183,8 @@ CREATE TABLE "THUMBNAIL_BOOK"
     "URL"                varchar   NULL,
     "SELECTED"           boolean   NOT NULL DEFAULT false,
     "TYPE"               varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "BOOK_ID"            varchar   NOT NULL,
     "WIDTH"              integer   NOT NULL DEFAULT 0,
     "HEIGHT"             integer   NOT NULL DEFAULT 0,
@@ -197,8 +197,8 @@ CREATE TABLE "MEDIA"
 (
     "MEDIA_TYPE"           varchar   NULL,
     "STATUS"               varchar   NOT NULL,
-    "CREATED_DATE"         timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE"   timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"         timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE"   timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "COMMENT"              varchar   NULL,
     "BOOK_ID"              varchar   NOT NULL PRIMARY KEY,
     "PAGE_COUNT"           integer   NOT NULL DEFAULT 0,
@@ -215,8 +215,8 @@ CREATE TABLE "READLIST"
     "ID"                 varchar   NOT NULL PRIMARY KEY,
     "NAME"               varchar   NOT NULL,
     "BOOK_COUNT"         integer   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "SUMMARY"            text      NOT NULL DEFAULT '',
     "ORDERED"            boolean   NOT NULL DEFAULT true
 );
@@ -254,8 +254,8 @@ CREATE TABLE "BOOK_METADATA_TAG"
 
 CREATE TABLE "BOOK_METADATA"
 (
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "NUMBER"             varchar   NOT NULL,
     "NUMBER_LOCK"        boolean   NOT NULL DEFAULT false,
     "NUMBER_SORT"        real      NOT NULL,
@@ -277,8 +277,8 @@ CREATE TABLE "BOOK_METADATA"
 
 CREATE TABLE "BOOK_METADATA_AGGREGATION"
 (
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "RELEASE_DATE"       date      NULL,
     "SUMMARY"            text      NOT NULL DEFAULT '',
     "SUMMARY_NUMBER"     varchar   NOT NULL DEFAULT '',
@@ -323,7 +323,7 @@ CREATE TABLE "AUTHENTICATION_ACTIVITY"
     "USER_AGENT"      varchar   NULL DEFAULT NULL,
     "SUCCESS"         boolean   NOT NULL,
     "ERROR"           varchar   NULL DEFAULT NULL,
-    "DATE_TIME"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "DATE_TIME"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "SOURCE"          varchar   NULL DEFAULT NULL,
     "API_KEY_ID"      varchar   NULL DEFAULT NULL,
     "API_KEY_COMMENT" varchar   NULL DEFAULT NULL,
@@ -344,8 +344,8 @@ CREATE TABLE "THUMBNAIL_SERIES"
     "SELECTED"           boolean   NOT NULL DEFAULT false,
     "THUMBNAIL"          bytea     NULL DEFAULT NULL,
     "TYPE"               varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "SERIES_ID"          varchar   NOT NULL,
     "WIDTH"              integer   NOT NULL DEFAULT 0,
     "HEIGHT"             integer   NOT NULL DEFAULT 0,
@@ -358,11 +358,11 @@ CREATE TABLE "READ_PROGRESS"
 (
     "BOOK_ID"            varchar   NOT NULL,
     "USER_ID"            varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "PAGE"               integer   NOT NULL,
     "COMPLETED"          boolean   NOT NULL,
-    "READ_DATE"          timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+    "READ_DATE"          timestamptz NULL DEFAULT CURRENT_TIMESTAMP,
     "device_id"          varchar   DEFAULT '',
     "device_name"        varchar   DEFAULT '',
     "locator"            bytea     NULL,
@@ -378,8 +378,8 @@ CREATE TABLE "THUMBNAIL_COLLECTION"
     "THUMBNAIL"          bytea     NOT NULL,
     "TYPE"               varchar   NOT NULL,
     "COLLECTION_ID"      varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "WIDTH"              integer   NOT NULL DEFAULT 0,
     "HEIGHT"             integer   NOT NULL DEFAULT 0,
     "MEDIA_TYPE"         varchar   NOT NULL DEFAULT '',
@@ -394,8 +394,8 @@ CREATE TABLE "THUMBNAIL_READLIST"
     "THUMBNAIL"          bytea     NOT NULL,
     "TYPE"               varchar   NOT NULL,
     "READLIST_ID"        varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "WIDTH"              integer   NOT NULL DEFAULT 0,
     "HEIGHT"             integer   NOT NULL DEFAULT 0,
     "MEDIA_TYPE"         varchar   NOT NULL DEFAULT '',
@@ -417,7 +417,7 @@ CREATE TABLE "HISTORICAL_EVENT"
     "TYPE"      varchar   NOT NULL,
     "BOOK_ID"   varchar   NULL,
     "SERIES_ID" varchar   NULL,
-    "TIMESTAMP" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "TIMESTAMP" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "HISTORICAL_EVENT_PROPERTIES"
@@ -467,8 +467,8 @@ CREATE TABLE "PAGE_HASH"
     "SIZE"               bigint    NULL,
     "ACTION"             varchar   NOT NULL,
     "DELETE_COUNT"       integer   NOT NULL DEFAULT 0,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "PAGE_HASH_THUMBNAIL"
@@ -503,8 +503,8 @@ CREATE TABLE "USER_API_KEY"
 (
     "ID"                 varchar   NOT NULL PRIMARY KEY,
     "USER_ID"            varchar   NOT NULL,
-    "CREATED_DATE"       timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "LAST_MODIFIED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "API_KEY"            varchar   NOT NULL UNIQUE,
     "COMMENT"            varchar   NOT NULL,
     FOREIGN KEY ("USER_ID") REFERENCES "USER" ("ID")
@@ -513,7 +513,7 @@ CREATE TABLE "USER_API_KEY"
 CREATE TABLE "SYNC_POINT"
 (
     "ID"           varchar   NOT NULL PRIMARY KEY,
-    "CREATED_DATE" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "CREATED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "USER_ID"      varchar   NOT NULL,
     "API_KEY_ID"   varchar   NULL,
     FOREIGN KEY ("USER_ID") REFERENCES "USER" ("ID")

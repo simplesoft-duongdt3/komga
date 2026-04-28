@@ -8,9 +8,9 @@ use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::api::dto::{CollectionDto, CollectionPageDto, CreateCollectionRequest, UpdateCollectionRequest};
+use crate::api::dto::{CollectionDto, CollectionPageDto, CreateCollectionRequest, UpdateCollectionRequest, SeriesDto};
 use crate::domain::model::collection::Collection;
-use crate::domain::repository::CollectionRepository;
+use crate::domain::repository::{CollectionRepository, SeriesRepository};
 
 #[derive(Deserialize)]
 struct PageParams {
@@ -123,4 +123,18 @@ pub fn routes() -> Router<PgPool> {
         .route("/api/v1/collections/{id}", get(get_collection))
         .route("/api/v1/collections/{id}", patch(update_collection))
         .route("/api/v1/collections/{id}", delete(delete_collection))
+        .route("/api/v1/collections/{id}/series", get(get_collection_series))
+}
+
+async fn get_collection_series(
+    State(pool): State<PgPool>,
+    Path(id): Path<String>,
+) -> Result<Json<Vec<SeriesDto>>, axum::response::Response> {
+    let uuid = Uuid::parse_str(&id).unwrap_or_default();
+    let series_repo = SeriesRepository::new(pool);
+    
+    match series_repo.find_by_collection(uuid).await {
+        Ok(series_list) => Ok(Json(series_list.into_iter().map(|s| s.into()).collect())),
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+    }
 }

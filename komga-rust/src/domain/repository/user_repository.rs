@@ -41,7 +41,7 @@ impl UserRepository {
             password: row.get::<String, _>("PASSWORD"),
             shared_all_libraries: row.get::<bool, _>("SHARED_ALL_LIBRARIES"),
             age_restriction: row.get::<Option<i32>, _>("AGE_RESTRICTION"),
-            age_restriction_allow_only: row.get::<bool, _>("AGE_RESTRICTION_ALLOW_ONLY"),
+            age_restriction_allow_only: row.get::<Option<bool>, _>("AGE_RESTRICTION_ALLOW_ONLY"),
             roles: vec![UserRole::PageViewer],
         })
     }
@@ -62,7 +62,7 @@ impl UserRepository {
             password: row.get::<String, _>("PASSWORD"),
             shared_all_libraries: row.get::<bool, _>("SHARED_ALL_LIBRARIES"),
             age_restriction: row.get::<Option<i32>, _>("AGE_RESTRICTION"),
-            age_restriction_allow_only: row.get::<bool, _>("AGE_RESTRICTION_ALLOW_ONLY"),
+            age_restriction_allow_only: row.get::<Option<bool>, _>("AGE_RESTRICTION_ALLOW_ONLY"),
             roles: vec![UserRole::PageViewer],
         }))
     }
@@ -83,8 +83,70 @@ impl UserRepository {
             password: row.get::<String, _>("PASSWORD"),
             shared_all_libraries: row.get::<bool, _>("SHARED_ALL_LIBRARIES"),
             age_restriction: row.get::<Option<i32>, _>("AGE_RESTRICTION"),
-            age_restriction_allow_only: row.get::<bool, _>("AGE_RESTRICTION_ALLOW_ONLY"),
+            age_restriction_allow_only: row.get::<Option<bool>, _>("AGE_RESTRICTION_ALLOW_ONLY"),
             roles: vec![UserRole::PageViewer],
         }))
+    }
+
+    pub async fn find_all(&self) -> Result<Vec<User>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT "ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "EMAIL", "PASSWORD", "SHARED_ALL_LIBRARIES", "AGE_RESTRICTION", "AGE_RESTRICTION_ALLOW_ONLY" FROM "USER" ORDER BY "EMAIL""#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|row| User {
+            id: Uuid::parse_str(&row.get::<String, _>("ID")).unwrap_or_default(),
+            created_date: row.get::<DateTime<Utc>, _>("CREATED_DATE"),
+            last_modified_date: row.get::<DateTime<Utc>, _>("LAST_MODIFIED_DATE"),
+            email: row.get::<String, _>("EMAIL"),
+            password: row.get::<String, _>("PASSWORD"),
+            shared_all_libraries: row.get::<bool, _>("SHARED_ALL_LIBRARIES"),
+            age_restriction: row.get::<Option<i32>, _>("AGE_RESTRICTION"),
+            age_restriction_allow_only: row.get::<Option<bool>, _>("AGE_RESTRICTION_ALLOW_ONLY"),
+            roles: vec![UserRole::PageViewer],
+        }).collect())
+    }
+
+    pub async fn delete(&self, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"DELETE FROM "USER" WHERE "ID" = $1"#
+        )
+        .bind(id.to_string())
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update(&self, id: Uuid, email: Option<String>, shared_all_libraries: Option<bool>, age_restriction: Option<i32>) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE "USER" SET 
+            "EMAIL" = COALESCE($2, "EMAIL"), 
+            "SHARED_ALL_LIBRARIES" = COALESCE($3, "SHARED_ALL_LIBRARIES"),
+            "AGE_RESTRICTION" = COALESCE($4, "AGE_RESTRICTION"),
+            "LAST_MODIFIED_DATE" = CURRENT_TIMESTAMP
+            WHERE "ID" = $1"#
+        )
+        .bind(id.to_string())
+        .bind(email)
+        .bind(shared_all_libraries)
+        .bind(age_restriction)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    pub async fn update_password(&self, id: Uuid, password_hash: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE "USER" SET "PASSWORD" = $2, "LAST_MODIFIED_DATE" = CURRENT_TIMESTAMP WHERE "ID" = $1"#
+        )
+        .bind(id.to_string())
+        .bind(password_hash)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
     }
 }

@@ -30,26 +30,9 @@ Rust implementation of Komga media server for comics/manga.
    cargo run --release
    ```
 
-## API Endpoints
+## API Documentation
 
-### Authentication
-- `POST /api/v1/users` - Register new user
-- `POST /api/v1/users/login` - Login
-- `GET /api/v1/users/me` - Get current user
-
-### Libraries
-- `GET /api/v1/libraries` - List all libraries
-- `POST /api/v1/libraries` - Create library
-- `GET /api/v1/libraries/{id}` - Get library
-- `DELETE /api/v1/libraries/{id}` - Delete library
-
-### Series
-- `GET /api/v1/libraries/{libraryId}/series` - List series in library
-- `GET /api/v1/series/{id}` - Get series
-
-### Books
-- `GET /api/v1/series/{seriesId}/books` - List books in series
-- `GET /api/v1/books/{id}` - Get book
+OpenAPI 3.1.0 specification available at [`openapi.json`](./openapi.json) — documents all 162 API endpoints across 13 tags with 28 DTO schemas.
 
 ## Development
 
@@ -63,7 +46,46 @@ Run with debug logging:
 RUST_LOG=debug cargo run
 ```
 
+Run integration tests (requires Docker):
+```bash
+cargo test --test integration_tests
+```
+
 ## Changelog
+
+### 2026-04-29 — DTO alignment with Java OpenAPI spec, OpenAPI export, missing API task list
+
+**DTO alignment** — all 27 DTOs updated to match the Java Komga OpenAPI spec field-for-field:
+- Added `#[serde(rename_all = "camelCase")]` to every DTO struct (JSON keys now match Java)
+- **LibraryDto**: Removed `type`/`library_type` field; renamed `unavailable_date`→`unavailable` (bool); renamed field prefixes (`import_comicinfo_*`→`import_comic_info_*`); added `scanDirectoryExclusions`; removed extra timestamps to match Java
+- **SeriesDto**: Added `booksInProgressCount`, `booksReadCount`, `booksUnreadCount`, `deleted`, timestamps; renamed `bookCount`→`booksCount`; added nested `BookMetadataAggregationDto` and `SeriesMetadataDto` refs
+- **BookDto**: Added `seriesTitle`, `size` (human-readable), timestamps, `deleted`; renamed `fileSize`→`sizeBytes`; removed `fileHashKoreader`; added nested `MediaDto`, `BookMetadataDto`, `ReadProgressDto` refs
+- **PageDto**: Added `size` (human-readable string)
+- **ReadProgressDto**: Added `deviceId`, `deviceName`, timestamps
+- **ReadListDto**: Replaced `bookCount` with `bookIds` array; added `filtered`, timestamps
+- **CollectionDto**: Replaced `seriesCount` with `seriesIds` array; added `filtered`, timestamps
+- **SeriesMetadataDto**: Added all 13 `*Lock` booleans + timestamps
+- **BookMetadataDto**: Added all 9 `*Lock` booleans + timestamps
+- **ApiKeyDto**: Renamed `name`→`comment`; added `userId`; renamed `lastUsedDate`→`lastModifiedDate`
+- **Page DTOs** (Series/Book/ReadList/Collection/Task): Added `empty`, `first`, `last`, `numberOfElements` fields
+- **New structs**: `MediaDto`, `BookMetadataAggregationDto`
+- **UpdateReadListRequest**: Added `bookIds` field
+
+**OpenAPI spec exported:**
+- `openapi.json` — comprehensive OpenAPI 3.1.0 spec covering all 162 endpoints and 28 DTO schemas
+- 78 of 130 Java paths covered (60% path parity)
+- 100% field parity for all DTOs present in both specs
+
+**Integration tests expanded** (50 total):
+- Dockerized PostgreSQL via testcontainers per test function
+- Tests: auth flow, CRUD for all entities, settings, search, API keys, Tachiyomi sync, thumbnails
+- Runs in parallel (26s) or single-thread (90s)
+
+**Missing API endpoint task list:**
+- 28 tasks created tracking the 52 Java-only endpoints not yet in Rust
+- Priority categories: thumbnail CRUD, progression, page hashes, series list endpoints, filesystem browsing, transient books, author metadata
+
+**Test results:** 139 total — 56 unit/lib + 50 integration + 23 existing + 5 API + 3 coverage + 2 serialization — **all passing**.
 
 ### 2026-04-28 — API stub fill-in, route fixes, integration test suite
 

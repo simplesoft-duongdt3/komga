@@ -376,11 +376,27 @@ async fn get_series_alphabetical_groups(
 }
 
 async fn list_series_alphabetical_groups(
-    State(_pool): State<PgPool>,
+    State(pool): State<PgPool>,
     Query(_params): Query<PageParams>,
-    Json(_search): Json<SeriesSearchRequest>,
+    Json(search): Json<SeriesSearchRequest>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    Ok(Json(serde_json::json!({ "groups": [] })))
+    let library_id = search.condition
+        .and_then(|c| c.all_of)
+        .and_then(|clauses| clauses.into_iter().find_map(|c| c.library_id))
+        .map(|lid| Uuid::parse_str(&lid.value).unwrap_or_default());
+
+    match library_id {
+        Some(lid) => {
+            let repo = SeriesRepository::new(pool);
+            let groups = repo.alphabetical_groups_by_library(lid).await
+                .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            let result: Vec<serde_json::Value> = groups.into_iter().map(|(letter, count)| {
+                serde_json::json!({"group": letter, "count": count})
+            }).collect();
+            Ok(Json(serde_json::json!({"groups": result})))
+        }
+        None => Ok(Json(serde_json::json!({ "groups": [] }))),
+    }
 }
 
 async fn get_series_collections(

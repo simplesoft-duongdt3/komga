@@ -259,6 +259,21 @@ impl SeriesRepository {
 
         Ok(rows.into_iter().map(row_to_series).collect())
     }
+
+    pub async fn alphabetical_groups_by_library(&self, library_id: Uuid) -> Result<Vec<(String, i64)>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT UPPER(LEFT("NAME", 1)) as letter, COUNT(*) as count
+            FROM "SERIES" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL
+            GROUP BY letter ORDER BY letter"#
+        )
+        .bind(library_id.to_string())
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(|r| {
+            (r.get::<String, _>("letter"), r.get::<i64, _>("count"))
+        }).collect())
+    }
 }
 
 fn row_to_series(row: sqlx::postgres::PgRow) -> Series {

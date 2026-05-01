@@ -319,6 +319,30 @@ impl BookRepository {
 
         Ok(rows.into_iter().map(row_to_book).collect())
     }
+
+    pub async fn find_by_library_paginated(&self, library_id: Uuid, limit: usize, offset: usize) -> Result<Vec<Book>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "BOOK" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL ORDER BY "NAME" ASC LIMIT $2 OFFSET $3"#
+        )
+        .bind(library_id.to_string())
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_book).collect())
+    }
+
+    pub async fn count_by_library(&self, library_id: Uuid) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT COUNT(*) as count FROM "BOOK" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL"#
+        )
+        .bind(library_id.to_string())
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.get::<i64, _>("count"))
+    }
 }
 
 fn row_to_book(row: sqlx::postgres::PgRow) -> Book {

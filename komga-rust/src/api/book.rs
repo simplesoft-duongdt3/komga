@@ -461,17 +461,27 @@ async fn update_book_metadata(
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct BookSearchRequest {
-    #[serde(rename = "fullTextSearch")]
-    full_text_search: Option<String>,
-    conditions: Option<Vec<SearchCondition>>,
+    condition: Option<SearchCondition>,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SearchCondition {
-    #[serde(rename = "type")]
-    condition_type: String,
-    value: Option<String>,
+    all_of: Option<Vec<SearchClause>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchClause {
+    library_id: Option<LibraryIdClause>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryIdClause {
+    value: String,
 }
 
 async fn list_books(
@@ -491,15 +501,31 @@ async fn list_books(
 async fn list_books_post(
     State(pool): State<PgPool>,
     Query(params): Query<PageParams>,
-    Json(_search): Json<BookSearchRequest>,
+    Json(search): Json<BookSearchRequest>,
 ) -> Result<Json<BookPageDto>, axum::response::Response> {
-    let repo = BookRepository::new(pool);
-    match repo.find_all(params.size, params.page * params.size).await {
-        Ok(books) => {
-            let total = books.len();
-            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size,)))
+    let repo = BookRepository::new(pool.clone());
+    
+    let library_id = search.condition
+        .and_then(|c| c.all_of)
+        .and_then(|clauses| clauses.into_iter().find_map(|c| c.library_id))
+        .map(|lid| Uuid::parse_str(&lid.value).unwrap_or_default());
+    
+    match library_id {
+        Some(lid) => {
+            let total = repo.count_by_library(lid).await.unwrap_or(0) as usize;
+            let books = repo.find_by_library_paginated(lid, params.size, params.page * params.size).await
+                .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size)))
         }
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+        None => {
+            match repo.find_all(params.size, params.page * params.size).await {
+                Ok(books) => {
+                    let total = books.len();
+                    Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size)))
+                }
+                Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+            }
+        }
     }
 }
 

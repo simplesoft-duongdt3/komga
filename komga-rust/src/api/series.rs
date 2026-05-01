@@ -20,6 +20,30 @@ use crate::domain::model::read_progress::ReadProgress;
 use crate::domain::model::task::{Task, TaskData, TaskType};
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesSearchRequest {
+    condition: Option<SearchCondition>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchCondition {
+    all_of: Option<Vec<SearchClause>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchClause {
+    library_id: Option<LibraryIdClause>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryIdClause {
+    value: String,
+}
+
+#[derive(Deserialize)]
 struct PageParams {
     #[serde(default = "default_page")]
     page: usize,
@@ -42,17 +66,7 @@ async fn get_series_by_library(
         Ok(series_list) => {
             let total = series_list.len();
             let series: Vec<SeriesDto> = series_list.into_iter().map(|s| s.into()).collect();
-            Ok(Json(SeriesPageDto {
-                content: series,
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(SeriesPageDto::new(series, total, params.page, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -272,50 +286,43 @@ async fn list_series(
     match repo.find_all(params.size, params.page * params.size).await {
         Ok(series_list) => {
             let total = series_list.len();
-            Ok(Json(SeriesPageDto {
-                content: series_list.into_iter().map(|s| s.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, params.page, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
 }
 
-#[derive(Deserialize)]
-struct SeriesSearchRequest {
-    #[serde(rename = "fullTextSearch")]
-    full_text_search: Option<String>,
-}
-
 async fn list_series_post(
     State(pool): State<PgPool>,
     Query(params): Query<PageParams>,
-    Json(_search): Json<SeriesSearchRequest>,
+    Json(search): Json<SeriesSearchRequest>,
 ) -> Result<Json<SeriesPageDto>, axum::response::Response> {
-    let repo = SeriesRepository::new(pool);
-    match repo.find_all(params.size, params.page * params.size).await {
-        Ok(series_list) => {
-            let total = series_list.len();
-            Ok(Json(SeriesPageDto {
-                content: series_list.into_iter().map(|s| s.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+    let repo = SeriesRepository::new(pool.clone());
+    
+    let library_id = search.condition
+        .and_then(|c| c.all_of)
+        .and_then(|clauses| clauses.into_iter().find_map(|c| c.library_id))
+        .map(|lid| Uuid::parse_str(&lid.value).unwrap_or_default());
+    
+    match library_id {
+        Some(lid) => {
+            let total = repo.count_by_library(lid).await.unwrap_or(0) as usize;
+            let series_list = repo.find_by_library_paginated(lid, params.size, params.page * params.size).await
+                .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
+            Ok(Json(SeriesPageDto::new(
+                series_list.into_iter().map(|s| s.into()).collect(),
+                total, params.page, params.size,
+            )))
         }
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+        None => {
+            match repo.find_all(params.size, params.page * params.size).await {
+                Ok(series_list) => {
+                    let total = series_list.len();
+                    Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, params.page, params.size)))
+                }
+                Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
+            }
+        }
     }
 }
 
@@ -327,17 +334,7 @@ async fn get_series_latest(
     match repo.find_latest(params.size).await {
         Ok(series_list) => {
             let total = series_list.len();
-            Ok(Json(SeriesPageDto {
-                content: series_list.into_iter().map(|s| s.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, 0, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -351,17 +348,7 @@ async fn get_series_new(
     match repo.find_new(params.size).await {
         Ok(series_list) => {
             let total = series_list.len();
-            Ok(Json(SeriesPageDto {
-                content: series_list.into_iter().map(|s| s.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, 0, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -375,17 +362,7 @@ async fn get_series_updated(
     match repo.find_updated(params.size).await {
         Ok(series_list) => {
             let total = series_list.len();
-            Ok(Json(SeriesPageDto {
-                content: series_list.into_iter().map(|s| s.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, 0, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }

@@ -539,25 +539,35 @@ pub struct UpdateCollectionRequest {
 pub struct TaskDto {
     pub id: String,
     pub task_type: String,
+    pub simple_type: String,
     pub status: String,
     pub priority: i32,
     pub created_date: String,
+    pub last_modified_date: String,
     pub scheduled_date: Option<String>,
     pub execution_start_date: Option<String>,
     pub execution_end_date: Option<String>,
+    pub duration_millis: Option<i64>,
 }
 
 impl From<Task> for TaskDto {
     fn from(t: Task) -> Self {
+        let duration = match (t.execution_start_date, t.execution_end_date) {
+            (Some(start), Some(end)) => Some((end - start).num_milliseconds()),
+            _ => None,
+        };
         Self {
             id: t.id,
-            task_type: format!("{:?}", t.task_type),
-            status: format!("{:?}", t.status),
+            task_type: t.task_type.as_str().to_string(),
+            simple_type: t.task_type.simple_type().to_string(),
+            status: t.status.as_str().to_string(),
             priority: t.priority,
             created_date: t.created_date.to_rfc3339(),
+            last_modified_date: t.created_date.to_rfc3339(),
             scheduled_date: t.scheduled_date.map(|d| d.to_rfc3339()),
             execution_start_date: t.execution_start_date.map(|d| d.to_rfc3339()),
             execution_end_date: t.execution_end_date.map(|d| d.to_rfc3339()),
+            duration_millis: duration,
         }
     }
 }

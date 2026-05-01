@@ -46,6 +46,68 @@ pub enum TaskType {
     FindBookThumbnailsToRegenerate,
 }
 
+impl TaskType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskType::ScanLibrary => "SCAN_LIBRARY",
+            TaskType::FindBooksToConvert => "FIND_BOOKS_TO_CONVERT",
+            TaskType::FindBooksWithMissingPageHash => "FIND_BOOKS_WITH_MISSING_PAGE_HASH",
+            TaskType::FindDuplicatePagesToDelete => "FIND_DUPLICATE_PAGES_TO_DELETE",
+            TaskType::EmptyTrash => "EMPTY_TRASH",
+            TaskType::AnalyzeBook => "ANALYZE_BOOK",
+            TaskType::VerifyBookHash => "VERIFY_BOOK_HASH",
+            TaskType::GenerateBookThumbnail => "GENERATE_BOOK_THUMBNAIL",
+            TaskType::RefreshBookMetadata => "REFRESH_BOOK_METADATA",
+            TaskType::HashBook => "HASH_BOOK",
+            TaskType::HashBookPages => "HASH_BOOK_PAGES",
+            TaskType::HashBookKoreader => "HASH_BOOK_KOREADER",
+            TaskType::RefreshSeriesMetadata => "REFRESH_SERIES_METADATA",
+            TaskType::AggregateSeriesMetadata => "AGGREGATE_SERIES_METADATA",
+            TaskType::RefreshBookLocalArtwork => "REFRESH_BOOK_LOCAL_ARTWORK",
+            TaskType::RefreshSeriesLocalArtwork => "REFRESH_SERIES_LOCAL_ARTWORK",
+            TaskType::ImportBook => "IMPORT_BOOK",
+            TaskType::ConvertBook => "CONVERT_BOOK",
+            TaskType::RepairExtension => "REPAIR_EXTENSION",
+            TaskType::RemoveHashedPages => "REMOVE_HASHED_PAGES",
+            TaskType::RebuildIndex => "REBUILD_INDEX",
+            TaskType::UpgradeIndex => "UPGRADE_INDEX",
+            TaskType::DeleteBook => "DELETE_BOOK",
+            TaskType::DeleteSeries => "DELETE_SERIES",
+            TaskType::FindBookThumbnailsToRegenerate => "FIND_BOOK_THUMBNAILS_TO_REGENERATE",
+        }
+    }
+
+    pub fn simple_type(&self) -> &'static str {
+        match self {
+            TaskType::ScanLibrary => "ScanLibrary",
+            TaskType::FindBooksToConvert => "FindBooksToConvert",
+            TaskType::FindBooksWithMissingPageHash => "FindBooksWithMissingPageHash",
+            TaskType::FindDuplicatePagesToDelete => "FindDuplicatePagesToDelete",
+            TaskType::EmptyTrash => "EmptyTrash",
+            TaskType::AnalyzeBook => "AnalyzeBook",
+            TaskType::VerifyBookHash => "VerifyBookHash",
+            TaskType::GenerateBookThumbnail => "GenerateBookThumbnail",
+            TaskType::RefreshBookMetadata => "RefreshBookMetadata",
+            TaskType::HashBook => "HashBook",
+            TaskType::HashBookPages => "HashBookPages",
+            TaskType::HashBookKoreader => "HashBookKoreader",
+            TaskType::RefreshSeriesMetadata => "RefreshSeriesMetadata",
+            TaskType::AggregateSeriesMetadata => "AggregateSeriesMetadata",
+            TaskType::RefreshBookLocalArtwork => "RefreshBookLocalArtwork",
+            TaskType::RefreshSeriesLocalArtwork => "RefreshSeriesLocalArtwork",
+            TaskType::ImportBook => "ImportBook",
+            TaskType::ConvertBook => "ConvertBook",
+            TaskType::RepairExtension => "RepairExtension",
+            TaskType::RemoveHashedPages => "RemoveHashedPages",
+            TaskType::RebuildIndex => "RebuildIndex",
+            TaskType::UpgradeIndex => "UpgradeIndex",
+            TaskType::DeleteBook => "DeleteBook",
+            TaskType::DeleteSeries => "DeleteSeries",
+            TaskType::FindBookThumbnailsToRegenerate => "FindBookThumbnailsToRegenerate",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum TaskStatus {
@@ -54,6 +116,18 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskStatus::Queued => "QUEUED",
+            TaskStatus::Running => "RUNNING",
+            TaskStatus::Completed => "COMPLETED",
+            TaskStatus::Failed => "FAILED",
+            TaskStatus::Cancelled => "CANCELLED",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

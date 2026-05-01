@@ -16,13 +16,37 @@ impl SeriesRepository {
 
     pub async fn find_by_library(&self, library_id: Uuid) -> Result<Vec<Series>, sqlx::Error> {
         let rows = sqlx::query(
-            r#"SELECT * FROM "SERIES" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL ORDER BY "NAME""#
+            r#"SELECT * FROM "SERIES" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL ORDER BY "NAME" ASC"#
         )
         .bind(library_id.to_string())
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn find_by_library_paginated(&self, library_id: Uuid, limit: usize, offset: usize) -> Result<Vec<Series>, sqlx::Error> {
+        let rows = sqlx::query(
+            r#"SELECT * FROM "SERIES" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL ORDER BY "NAME" ASC LIMIT $2 OFFSET $3"#
+        )
+        .bind(library_id.to_string())
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.into_iter().map(row_to_series).collect())
+    }
+
+    pub async fn count_by_library(&self, library_id: Uuid) -> Result<i64, sqlx::Error> {
+        let row = sqlx::query(
+            r#"SELECT COUNT(*) as count FROM "SERIES" WHERE "LIBRARY_ID" = $1 AND "DELETED_DATE" IS NULL"#
+        )
+        .bind(library_id.to_string())
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.get::<i64, _>("count"))
     }
 
     pub async fn find_by_id(&self, id: Uuid) -> Result<Option<Series>, sqlx::Error> {
@@ -61,7 +85,7 @@ impl SeriesRepository {
 
     pub async fn insert(&self, series: &Series) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO "SERIES" ("ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "FILE_LAST_MODIFIED", "NAME", "URL", "LIBRARY_ID", "BOOK_COUNT", "DELETED_DATE", "ONESHOT")
+            r#"INSERT INTO "SERIES" ("ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "FILE_LAST_MODIFIED", "NAME", "URL", "LIBRARY_ID", "BOOK_COUNT", "DELETED_DATE", "oneshot")
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#
         )
         .bind(series.id.to_string())
@@ -248,7 +272,7 @@ fn row_to_series(row: sqlx::postgres::PgRow) -> Series {
         library_id: Uuid::parse_str(&row.get::<String, _>("LIBRARY_ID")).unwrap_or_default(),
         book_count: row.get::<i32, _>("BOOK_COUNT"),
         deleted_date: row.get::<Option<DateTime<Utc>>, _>("DELETED_DATE"),
-        oneshot: row.get::<bool, _>("ONESHOT"),
+        oneshot: row.get::<bool, _>("oneshot"),
         metadata: None,
         cover_file_name: row.get::<Option<String>, _>("COVER_FILE_NAME"),
     }

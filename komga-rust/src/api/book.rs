@@ -41,17 +41,7 @@ async fn get_books_by_series(
         Ok(books_list) => {
             let total = books_list.len();
             let books: Vec<BookDto> = books_list.into_iter().map(|b| b.into()).collect();
-            Ok(Json(BookPageDto {
-                content: books,
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books, total, params.page, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -492,17 +482,7 @@ async fn list_books(
     match repo.find_all(params.size, params.page * params.size).await {
         Ok(books) => {
             let total = books.len();
-            Ok(Json(BookPageDto {
-                content: books.into_iter().map(|b| b.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -517,17 +497,7 @@ async fn list_books_post(
     match repo.find_all(params.size, params.page * params.size).await {
         Ok(books) => {
             let total = books.len();
-            Ok(Json(BookPageDto {
-                content: books.into_iter().map(|b| b.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -541,17 +511,7 @@ async fn get_books_latest(
     match repo.find_latest(params.size).await {
         Ok(books) => {
             let total = books.len();
-            Ok(Json(BookPageDto {
-                content: books.into_iter().map(|b| b.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, 0, params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -565,17 +525,7 @@ async fn get_books_ondeck(
     match repo.find_ondeck(_params.size).await {
         Ok(books) => {
             let total = books.len();
-            Ok(Json(BookPageDto {
-                content: books.into_iter().map(|b| b.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: _params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, 0, _params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -589,17 +539,7 @@ async fn get_books_duplicates(
     match repo.find_duplicates().await {
         Ok(books) => {
             let total = books.len();
-            Ok(Json(BookPageDto {
-                content: books.into_iter().map(|b| b.into()).collect(),
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: _params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, 0, _params.size,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }

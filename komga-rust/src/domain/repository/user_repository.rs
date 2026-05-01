@@ -16,7 +16,7 @@ impl UserRepository {
         Self { pool }
     }
 
-    pub async fn create(&self, email: &str, password_hash: &str) -> Result<User, sqlx::Error> {
+    pub async fn create(&self, email: &str, password_hash: &str, roles: &[UserRole]) -> Result<User, sqlx::Error> {
         let id = Uuid::new_v4();
         let now = Utc::now();
 
@@ -42,7 +42,7 @@ impl UserRepository {
             shared_all_libraries: row.get::<bool, _>("SHARED_ALL_LIBRARIES"),
             age_restriction: row.get::<Option<i32>, _>("AGE_RESTRICTION"),
             age_restriction_allow_only: row.get::<Option<bool>, _>("AGE_RESTRICTION_ALLOW_ONLY"),
-            roles: vec![UserRole::PageViewer],
+            roles: roles.to_vec(),
         })
     }
 

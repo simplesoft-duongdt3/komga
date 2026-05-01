@@ -4,7 +4,7 @@ use axum::{
     Router, Json,
     response::IntoResponse,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 use std::path::PathBuf;
@@ -14,6 +14,30 @@ use crate::api::dto::LibraryDto;
 use crate::domain::model::library::Library;
 use crate::domain::model::task::{Task, TaskData, TaskType};
 use crate::domain::repository::{TaskRepository, PageHashRepository};
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FilesystemRequest {
+    path: String,
+    #[serde(default)]
+    show_files: bool,
+}
+
+#[derive(Serialize)]
+struct DirectoryListingDto {
+    directories: Vec<PathDto>,
+    files: Vec<PathDto>,
+    parent: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PathDto {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    entry_type: String,
+}
 
 async fn get_all_libraries(
     State(pool): State<PgPool>,
@@ -232,47 +256,63 @@ async fn empty_trash(
     }
 }
 
-#[derive(Deserialize)]
-struct FilesystemRequest {
-    path: String,
-}
-
 async fn filesystem(
     State(_pool): State<PgPool>,
     Json(req): Json<FilesystemRequest>,
-) -> Result<Json<serde_json::Value>, axum::response::Response> {
-    use std::fs;
-    let path = std::path::Path::new(&req.path);
+) -> Result<Json<DirectoryListingDto>, axum::response::Response> {
+    let path_str = if req.path.is_empty() { "/".to_string() } else { req.path.clone() };
+    let path = std::path::Path::new(&path_str);
     
     if !path.exists() {
-        return Ok(Json(serde_json::json!({
-            "path": req.path,
-            "children": [],
-        })));
+        return Ok(Json(DirectoryListingDto {
+            directories: vec![],
+            files: vec![],
+            parent: None,
+        }));
     }
     
-    let children: Vec<serde_json::Value> = fs::read_dir(path)
-        .ok()
-        .map(|entries| {
-            entries.filter_map(|entry| entry.ok())
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    let file_type = entry.file_type().ok()?;
-                    Some(serde_json::json!({
-                        "path": path.to_string_lossy().to_string(),
-                        "name": path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
-                        "isDirectory": file_type.is_dir(),
-                        "isFile": file_type.is_file(),
-                    }))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let entries = fs::read_dir(path).ok();
+    let mut directories = Vec::new();
+    let mut files = Vec::new();
     
-    Ok(Json(serde_json::json!({
-        "path": req.path,
-        "children": children,
-    })))
+    if let Some(entries) = entries {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(t) => t,
+                _ => continue,
+            };
+            
+            let name = entry_path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let path_str = entry_path.to_string_lossy().to_string();
+            
+            let dto = PathDto {
+                name,
+                path: path_str,
+                entry_type: if file_type.is_dir() { "directory".to_string() } else { "file".to_string() },
+            };
+            
+            if file_type.is_dir() {
+                directories.push(dto);
+            } else if req.show_files {
+                files.push(dto);
+            }
+        }
+    }
+    
+    let parent = if path_str == "/" {
+        Some("".to_string())
+    } else {
+        path.parent().map(|p| p.to_string_lossy().to_string())
+    };
+    
+    Ok(Json(DirectoryListingDto {
+        directories,
+        files,
+        parent,
+    }))
 }
 
 async fn get_referential(

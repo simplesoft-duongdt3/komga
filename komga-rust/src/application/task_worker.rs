@@ -79,7 +79,8 @@ impl TaskWorker {
                     tracing::info!("Task {} completed", task.id);
                 }
                 Err(e) => {
-                    tracing::error!("Task {} failed: {}", task.id, e);
+                    tracing::error!("Task {} (type={:?}, library_id={:?}) failed: {}", 
+                        task.id, task.task_type, Self::extract_library_id(&task.data), e);
                     task.status = TaskStatus::Failed;
                     repo.update_status(&task.id, &TaskStatus::Failed).await?;
                 }
@@ -87,6 +88,15 @@ impl TaskWorker {
         }
         
         Ok(())
+    }
+
+    fn extract_library_id(data: &TaskData) -> &str {
+        match data {
+            TaskData::ScanLibrary { library_id, .. } => library_id,
+            TaskData::AnalyzeBook { book_id, .. } => book_id,
+            TaskData::RefreshBookMetadata { book_id, .. } => book_id,
+            _ => "unknown",
+        }
     }
 
     async fn execute_task(task: &Task, pool: &PgPool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -222,7 +232,7 @@ impl TaskWorker {
             
             let series_url = format!("/library/{}/series/{}", library_id, series_name.replace(' ', "%20"));
             
-            let series = match series_repo.find_by_name(&series_name, library_id).await? {
+            let mut series = match series_repo.find_by_name(&series_name, library_id).await? {
                 Some(s) => s,
                 None => {
                     let new_series = Series::new(series_name.clone(), series_url, library_id);
@@ -233,13 +243,21 @@ impl TaskWorker {
             
             if book_repo.find_by_name(&file_name, series.id).await?.is_none() {
                 let book_url = format!("/library/{}/series/{}/{}", library_id, series_name.replace(' ', "%20"), file_name.replace(' ', "%20"));
-                let file_size = fs::metadata(file_path)?.len() as i64;
+                let file_size = match fs::metadata(file_path) {
+                    Ok(m) => m.len() as i64,
+                    Err(e) => {
+                        tracing::error!("Failed to read metadata for file {}: {}", file_path.display(), e);
+                        continue;
+                    }
+                };
                 
                 let book = Book::new(file_name, book_url, series.id, library_id, 0);
                 let mut book = book;
                 book.file_size = file_size;
                 
                 book_repo.insert(&book).await?;
+                series.book_count += 1;
+                series_repo.update_book_count(&series.id, series.book_count).await?;
                 tracing::info!("Added book: {} to series: {}", book.name, series_name);
             }
         }

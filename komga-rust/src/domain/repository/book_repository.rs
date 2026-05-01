@@ -72,7 +72,7 @@ impl BookRepository {
 
     pub async fn insert(&self, book: &Book) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO "BOOK" ("ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "FILE_LAST_MODIFIED", "NAME", "URL", "SERIES_ID", "FILE_SIZE", "NUMBER", "LIBRARY_ID", "FILE_HASH", "DELETED_DATE", "ONESHOT", "FILE_HASH_KOREADER")
+            r#"INSERT INTO "BOOK" ("ID", "CREATED_DATE", "LAST_MODIFIED_DATE", "FILE_LAST_MODIFIED", "NAME", "URL", "SERIES_ID", "FILE_SIZE", "NUMBER", "LIBRARY_ID", "FILE_HASH", "DELETED_DATE", "oneshot", "FILE_HASH_KOREADER")
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"#
         )
         .bind(book.id.to_string())
@@ -335,7 +335,7 @@ fn row_to_book(row: sqlx::postgres::PgRow) -> Book {
         library_id: Uuid::parse_str(&row.get::<String, _>("LIBRARY_ID")).unwrap_or_default(),
         file_hash: row.get::<String, _>("FILE_HASH"),
         deleted_date: row.get::<Option<DateTime<Utc>>, _>("DELETED_DATE"),
-        oneshot: row.get::<bool, _>("ONESHOT"),
+        oneshot: row.get::<bool, _>("oneshot"),
         file_hash_koreader: row.get::<String, _>("FILE_HASH_KOREADER"),
         metadata: None,
         media: None,

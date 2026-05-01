@@ -22,8 +22,8 @@ impl TaskRepository {
             RETURNING *"#
         )
         .bind(&task.id)
-        .bind(format!("{:?}", task.task_type))
-        .bind(format!("{:?}", task.status))
+        .bind(task.task_type.as_str())
+        .bind(task.status.as_str())
         .bind(task.priority)
         .bind(task.created_date)
         .bind(serde_json::to_string(&task.data).unwrap_or_default())
@@ -69,7 +69,7 @@ impl TaskRepository {
             r#"UPDATE "TASK" SET "STATUS" = $2, "LAST_MODIFIED_DATE" = CURRENT_TIMESTAMP WHERE "ID" = $1"#
         )
         .bind(id)
-        .bind(format!("{:?}", status))
+        .bind(status.as_str())
         .execute(&self.pool)
         .await?;
 

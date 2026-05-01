@@ -40,17 +40,7 @@ async fn get_tasks(
             let total = tasks.len();
             let task_dtos: Vec<TaskDto> = tasks.into_iter().map(|t| t.into()).collect();
             eprintln!("[DEBUG] Found {} tasks", total);
-            Ok(Json(TaskPageDto {
-                content: task_dtos,
-                total_elements: total,
-                total_pages: if size > 0 { total / size } else { 1 },
-                number: params.page,
-                size: params.size,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(TaskPageDto::new(task_dtos, total, params.page, params.size,)))
         }
         Err(e) => {
             eprintln!("[DEBUG] Task find_all error: {}", e);

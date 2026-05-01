@@ -63,13 +63,14 @@ CREATE TABLE "SERIES"
     "ID"                 varchar   NOT NULL PRIMARY KEY,
     "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "FILE_LAST_MODIFIED" timestamp NOT NULL,
+    "FILE_LAST_MODIFIED" timestamptz NULL DEFAULT NULL,
     "NAME"               varchar   NOT NULL,
     "URL"                varchar   NOT NULL,
     "LIBRARY_ID"         varchar   NOT NULL,
     "BOOK_COUNT"         integer   NOT NULL DEFAULT 0,
     "DELETED_DATE"       timestamptz NULL DEFAULT NULL,
     "oneshot"            boolean   NOT NULL DEFAULT false,
+    "COVER_FILE_NAME"    varchar   NULL DEFAULT NULL,
     FOREIGN KEY ("LIBRARY_ID") REFERENCES "LIBRARY" ("ID")
 );
 
@@ -109,7 +110,7 @@ CREATE TABLE "BOOK"
     "ID"                 varchar   NOT NULL PRIMARY KEY,
     "CREATED_DATE"       timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "LAST_MODIFIED_DATE" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "FILE_LAST_MODIFIED" timestamp NOT NULL,
+    "FILE_LAST_MODIFIED" timestamptz NULL DEFAULT NULL,
     "NAME"               varchar   NOT NULL,
     "URL"                varchar   NOT NULL,
     "SERIES_ID"          varchar   NOT NULL,
@@ -120,6 +121,7 @@ CREATE TABLE "BOOK"
     "DELETED_DATE"       timestamptz NULL DEFAULT NULL,
     "oneshot"            boolean   NOT NULL DEFAULT false,
     "FILE_HASH_KOREADER" varchar   NOT NULL DEFAULT '',
+    "COVER_FILE_NAME"    varchar   NULL DEFAULT NULL,
     FOREIGN KEY ("LIBRARY_ID") REFERENCES "LIBRARY" ("ID"),
     FOREIGN KEY ("SERIES_ID") REFERENCES "SERIES" ("ID")
 );
@@ -665,3 +667,13 @@ CREATE INDEX "idx__series_metadata_genre__series_id" on "SERIES_METADATA_GENRE" 
 CREATE INDEX "idx__series_metadata_tag__series_id" on "SERIES_METADATA_TAG" ("SERIES_ID");
 CREATE INDEX "idx__book_metadata_aggregation_author__series_id" on "BOOK_METADATA_AGGREGATION_AUTHOR" ("SERIES_ID");
 CREATE INDEX "idx__book__created_date" on "BOOK" ("CREATED_DATE");
+
+
+ALTER TABLE "BOOK" 
+ADD CONSTRAINT uq_book_url_library
+UNIQUE ("URL", "LIBRARY_ID");
+
+
+ALTER TABLE "SERIES" 
+ADD CONSTRAINT uq_series_url_library 
+UNIQUE ("URL", "LIBRARY_ID");

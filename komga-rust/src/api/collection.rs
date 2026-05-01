@@ -33,17 +33,7 @@ async fn get_all_collections(
         Ok(collections) => {
             let total = collections.len();
             let collections: Vec<CollectionDto> = collections.into_iter().map(|c| c.into()).collect();
-            Ok(Json(CollectionPageDto {
-                content: collections,
-                total_elements: total,
-                total_pages: 1,
-                number: 0,
-                size: total,
-                empty: false,
-                first: true,
-                last: true,
-                number_of_elements: 0,
-            }))
+            Ok(Json(CollectionPageDto::new(collections, total, 0, total,)))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }

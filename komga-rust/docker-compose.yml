@@ -46,7 +46,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data:ro
+      - /Users/teamcumahay/Downloads:/data:ro
       - ./webui-dist:/app/webui-dist:ro
       - search_index:/search_index
     restart: unless-stopped

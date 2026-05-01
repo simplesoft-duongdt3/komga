@@ -24,6 +24,17 @@ pub enum UserRole {
     BookUpload,
 }
 
+impl UserRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UserRole::Admin => "ADMIN",
+            UserRole::PageViewer => "PAGE_VIEWER",
+            UserRole::BookDownload => "BOOK_DOWNLOAD",
+            UserRole::BookUpload => "BOOK_UPLOAD",
+        }
+    }
+}
+
 impl User {
     pub fn new(email: String, password: String) -> Self {
         let now = Utc::now();

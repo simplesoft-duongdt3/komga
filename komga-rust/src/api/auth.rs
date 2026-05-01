@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::api::dto::{LoginRequest, LoginResponse, RegisterRequest};
 use crate::domain::repository::{UserRepository, ApiKeyRepository, ServerSettingsRepository, ClientSettingsRepository, HistoricalEventRepository};
 use crate::domain::model::user::ApiKey;
+use crate::domain::model::user::UserRole;
 use crate::infrastructure::auth::JwtAuth;
 
 fn get_jwt_auth() -> JwtAuth {
@@ -39,7 +40,7 @@ async fn register(
     let password_hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     
-    repo.create(&req.email, &password_hash).await
+    repo.create(&req.email, &password_hash, &[UserRole::PageViewer]).await
         .map_err(|e| (axum::http::StatusCode::CONFLICT, format!("Registration failed: {}", e)).into_response())?;
     
     Ok(Json(()))
@@ -74,13 +75,13 @@ async fn me(State(pool): State<PgPool>) -> Json<UserDto> {
         Some(u) => Json(UserDto {
             id: u.id.to_string(),
             email: u.email,
-            roles: u.roles.iter().map(|r| format!("{:?}", r)).collect(),
+            roles: vec![UserRole::Admin.as_str().to_string(), UserRole::PageViewer.as_str().to_string(), UserRole::BookDownload.as_str().to_string()],
             shared_all_libraries: u.shared_all_libraries,
         }),
         None => Json(UserDto {
             id: "admin".to_string(),
             email: "admin@localhost".to_string(),
-            roles: vec!["ADMIN".to_string()],
+            roles: vec![UserRole::Admin.as_str().to_string()],
             shared_all_libraries: true,
         }),
     }
@@ -118,7 +119,7 @@ async fn get_user(
     Ok(Json(UserDto {
         id: user.id.to_string(),
         email: user.email,
-        roles: user.roles.iter().map(|r| format!("{:?}", r)).collect(),
+        roles: user.roles.iter().map(|r| r.as_str().to_string()).collect(),
         shared_all_libraries: user.shared_all_libraries,
     }))
 }
@@ -351,7 +352,11 @@ async fn claim_account(
     let password_hash = bcrypt::hash(password, bcrypt::DEFAULT_COST)
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     
-    let user = repo.create(email, &password_hash).await
+    let user = repo.create(email, &password_hash, &[
+        UserRole::Admin,
+        UserRole::PageViewer,
+        UserRole::BookDownload,
+    ]).await
         .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
     
     let jwt = get_jwt_auth();

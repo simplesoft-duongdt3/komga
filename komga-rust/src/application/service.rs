@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::domain::model::user::User;
+use crate::domain::model::user::{User, UserRole};
 use crate::domain::repository::UserRepository;
 
 pub struct Service {
@@ -21,7 +21,7 @@ impl Service {
         }
         
         let password_hash = bcrypt::hash(password, 10).map_err(|e| e.to_string())?;
-        repo.create(email, &password_hash).await.map_err(|e| e.to_string())
+        repo.create(email, &password_hash, &[UserRole::PageViewer]).await.map_err(|e| e.to_string())
     }
 
     pub async fn authenticate(&self, email: &str, password: &str, jwt_secret: &str) -> Result<String, String> {

@@ -334,6 +334,38 @@ pub struct SeriesPageDto {
     pub first: bool,
     pub last: bool,
     pub number_of_elements: usize,
+    #[serde(default = "default_pageable")]
+    pub pageable: PageableObject,
+    #[serde(default = "default_sort")]
+    pub sort: SortObject,
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SortObject {
+    pub empty: bool,
+    pub sorted: bool,
+    pub unsorted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PageableObject {
+    pub offset: i64,
+    pub page_number: i32,
+    pub page_size: i32,
+    pub paged: bool,
+    pub unpaged: bool,
+}
+
+
+fn default_pageable() -> PageableObject {
+    PageableObject { offset: 0, page_number: 0, page_size: 20, paged: true, unpaged: false }
+}
+
+fn default_sort() -> SortObject {
+    SortObject { empty: true, sorted: false, unsorted: true }
 }
 
 impl SeriesPageDto {
@@ -349,7 +381,21 @@ impl SeriesPageDto {
             total_pages,
             number: page,
             size,
+            pageable: PageableObject {
+                offset: (page * size) as i64,
+                page_number: page as i32,
+                page_size: size as i32,
+                paged: true,
+                unpaged: false,
+            },
+            sort: SortObject { empty: true, sorted: false, unsorted: true },
         }
+    }
+
+    pub fn with_sort(mut self, sort: Option<&str>) -> Self {
+        let sorted = sort.is_some();
+        self.sort = SortObject { empty: !sorted, sorted, unsorted: !sorted };
+        self
     }
 }
 
@@ -365,6 +411,10 @@ pub struct BookPageDto {
     pub first: bool,
     pub last: bool,
     pub number_of_elements: usize,
+    #[serde(default = "default_pageable")]
+    pub pageable: PageableObject,
+    #[serde(default = "default_sort")]
+    pub sort: SortObject,
 }
 
 impl BookPageDto {
@@ -380,7 +430,21 @@ impl BookPageDto {
             total_pages,
             number: page,
             size,
+            pageable: PageableObject {
+                offset: (page * size) as i64,
+                page_number: page as i32,
+                page_size: size as i32,
+                paged: true,
+                unpaged: false,
+            },
+            sort: SortObject { empty: true, sorted: false, unsorted: true },
         }
+    }
+
+    pub fn with_sort(mut self, sort: Option<&str>) -> Self {
+        let sorted = sort.is_some();
+        self.sort = SortObject { empty: !sorted, sorted, unsorted: !sorted };
+        self
     }
 }
 
@@ -424,6 +488,10 @@ pub struct ReadListPageDto {
     pub first: bool,
     pub last: bool,
     pub number_of_elements: usize,
+    #[serde(default = "default_pageable")]
+    pub pageable: PageableObject,
+    #[serde(default = "default_sort")]
+    pub sort: SortObject,
 }
 
 impl ReadListPageDto {
@@ -439,7 +507,21 @@ impl ReadListPageDto {
             total_pages,
             number: page,
             size,
+            pageable: PageableObject {
+                offset: (page * size) as i64,
+                page_number: page as i32,
+                page_size: size as i32,
+                paged: true,
+                unpaged: false,
+            },
+            sort: SortObject { empty: true, sorted: false, unsorted: true },
         }
+    }
+
+    pub fn with_sort(mut self, sort: Option<&str>) -> Self {
+        let sorted = sort.is_some();
+        self.sort = SortObject { empty: !sorted, sorted, unsorted: !sorted };
+        self
     }
 }
 
@@ -499,6 +581,10 @@ pub struct CollectionPageDto {
     pub first: bool,
     pub last: bool,
     pub number_of_elements: usize,
+    #[serde(default = "default_pageable")]
+    pub pageable: PageableObject,
+    #[serde(default = "default_sort")]
+    pub sort: SortObject,
 }
 
 impl CollectionPageDto {
@@ -514,7 +600,21 @@ impl CollectionPageDto {
             total_pages,
             number: page,
             size,
+            pageable: PageableObject {
+                offset: (page * size) as i64,
+                page_number: page as i32,
+                page_size: size as i32,
+                paged: true,
+                unpaged: false,
+            },
+            sort: SortObject { empty: true, sorted: false, unsorted: true },
         }
+    }
+
+    pub fn with_sort(mut self, sort: Option<&str>) -> Self {
+        let sorted = sort.is_some();
+        self.sort = SortObject { empty: !sorted, sorted, unsorted: !sorted };
+        self
     }
 }
 
@@ -584,6 +684,10 @@ pub struct TaskPageDto {
     pub first: bool,
     pub last: bool,
     pub number_of_elements: usize,
+    #[serde(default = "default_pageable")]
+    pub pageable: PageableObject,
+    #[serde(default = "default_sort")]
+    pub sort: SortObject,
 }
 
 impl TaskPageDto {
@@ -599,7 +703,21 @@ impl TaskPageDto {
             total_pages,
             number: page,
             size,
+            pageable: PageableObject {
+                offset: (page * size) as i64,
+                page_number: page as i32,
+                page_size: size as i32,
+                paged: true,
+                unpaged: false,
+            },
+            sort: SortObject { empty: true, sorted: false, unsorted: true },
         }
+    }
+
+    pub fn with_sort(mut self, sort: Option<&str>) -> Self {
+        let sorted = sort.is_some();
+        self.sort = SortObject { empty: !sorted, sorted, unsorted: !sorted };
+        self
     }
 }
 

@@ -45,6 +45,7 @@ struct LibraryIdClause {
 
 #[derive(Deserialize)]
 struct PageParams {
+    sort: Option<String>,
     #[serde(default = "default_page")]
     page: usize,
     #[serde(default = "default_size")]
@@ -66,7 +67,7 @@ async fn get_series_by_library(
         Ok(series_list) => {
             let total = series_list.len();
             let series: Vec<SeriesDto> = series_list.into_iter().map(|s| s.into()).collect();
-            Ok(Json(SeriesPageDto::new(series, total, params.page, params.size,)))
+            Ok(Json(SeriesPageDto::new(series, total, params.page, params.size,).with_sort(params.sort.as_deref())))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -286,7 +287,7 @@ async fn list_series(
     match repo.find_all(params.size, params.page * params.size).await {
         Ok(series_list) => {
             let total = series_list.len();
-            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, params.page, params.size,)))
+            Ok(Json(SeriesPageDto::new(series_list.into_iter().map(|s| s.into()).collect(), total, params.page, params.size,).with_sort(params.sort.as_deref())))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }

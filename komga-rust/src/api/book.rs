@@ -20,6 +20,7 @@ use crate::infrastructure::mediacontainer::image::ImageProcessor;
 
 #[derive(Deserialize)]
 struct PageParams {
+    sort: Option<String>,
     #[serde(default = "default_page")]
     page: usize,
     #[serde(default = "default_size")]
@@ -41,7 +42,7 @@ async fn get_books_by_series(
         Ok(books_list) => {
             let total = books_list.len();
             let books: Vec<BookDto> = books_list.into_iter().map(|b| b.into()).collect();
-            Ok(Json(BookPageDto::new(books, total, params.page, params.size,)))
+            Ok(Json(BookPageDto::new(books, total, params.page, params.size,).with_sort(params.sort.as_deref())))
         }
         Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()),
     }
@@ -515,7 +516,7 @@ async fn list_books_post(
             let total = repo.count_by_library(lid).await.unwrap_or(0) as usize;
             let books = repo.find_by_library_paginated(lid, params.size, params.page * params.size).await
                 .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response())?;
-            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size)))
+            Ok(Json(BookPageDto::new(books.into_iter().map(|b| b.into()).collect(), total, params.page, params.size).with_sort(params.sort.as_deref())))
         }
         None => {
             match repo.find_all(params.size, params.page * params.size).await {

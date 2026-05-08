@@ -21,6 +21,9 @@ import org.gotson.komga.interfaces.scheduler.METER_TASKS_EXECUTION
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_FAILURE
 import org.springframework.stereotype.Service
 import java.nio.file.Paths
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.util.UUID
 import kotlin.time.measureTime
 import kotlin.time.toJavaDuration
 
@@ -44,11 +47,20 @@ class TaskHandler(
   private val searchIndexLifecycle: SearchIndexLifecycle,
   private val pageHashLifecycle: PageHashLifecycle,
   private val meterRegistry: MeterRegistry,
+  private val taskExecutionRepository: TaskExecutionRepository,
 ) {
   fun handleTask(task: Task) {
     logger.info { "Executing task: $task" }
+
+    val executionStart = LocalDateTime.now(ZoneId.of("Z"))
+    val executionId = UUID.randomUUID().toString().substring(0, 8)
+
+    val libraryId = task.libraryId()
+    val seriesId = task.seriesId()
+    val bookId = task.bookId()
+
     try {
-      measureTime {
+      val duration = measureTime {
         when (task) {
           is Task.ScanLibrary ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
@@ -187,13 +199,107 @@ class TaskHandler(
             taskEmitter.generateBookThumbnail(bookLifecycle.findBookThumbnailsToRegenerate(task.forBiggerResultOnly), task.priority)
           }
         }
-      }.also {
-        logger.info { "Task $task executed in $it" }
-        meterRegistry.timer(METER_TASKS_EXECUTION, "type", task.javaClass.simpleName).record(it.toJavaDuration())
       }
+
+      logger.info { "Task $task executed in $duration" }
+      meterRegistry.timer(METER_TASKS_EXECUTION, "type", task.javaClass.simpleName).record(duration.toJavaDuration())
+
+      recordExecution(
+        executionId = executionId,
+        task = task,
+        libraryId = libraryId,
+        seriesId = seriesId,
+        bookId = bookId,
+        start = executionStart,
+        durationMillis = duration.inWholeMilliseconds,
+        success = true,
+        errorMessage = null,
+      )
     } catch (e: Exception) {
       logger.error(e) { "Task $task execution failed" }
       meterRegistry.counter(METER_TASKS_FAILURE, "type", task.javaClass.simpleName).increment()
+
+      recordExecution(
+        executionId = executionId,
+        task = task,
+        libraryId = libraryId,
+        seriesId = seriesId,
+        bookId = bookId,
+        start = executionStart,
+        durationMillis = null,
+        success = false,
+        errorMessage = e.message,
+      )
+    }
+  }
+
+  private fun recordExecution(
+    executionId: String,
+    task: Task,
+    libraryId: String?,
+    seriesId: String?,
+    bookId: String?,
+    start: LocalDateTime,
+    durationMillis: Long?,
+    success: Boolean,
+    errorMessage: String?,
+  ) {
+    try {
+      val end = if (success) LocalDateTime.now(ZoneId.of("Z")) else null
+      taskExecutionRepository.save(
+        TaskExecution(
+          id = executionId,
+          simpleType = task.javaClass.simpleName,
+          taskId = task.uniqueId,
+          libraryId = libraryId,
+          seriesId = seriesId,
+          bookId = bookId,
+          startDate = start,
+          endDate = end,
+          success = success,
+          errorMessage = if (success) null else errorMessage,
+          durationMillis = durationMillis,
+        ),
+      )
+    } catch (e: Exception) {
+      logger.warn(e) { "Could not record task execution history" }
     }
   }
 }
+
+private fun Task.libraryId(): String? =
+  when (this) {
+    is Task.ScanLibrary -> libraryId
+    is Task.FindBooksToConvert -> libraryId
+    is Task.FindBooksWithMissingPageHash -> libraryId
+    is Task.FindDuplicatePagesToDelete -> libraryId
+    is Task.EmptyTrash -> libraryId
+    else -> null
+  }
+
+private fun Task.seriesId(): String? =
+  when (this) {
+    is Task.RefreshSeriesMetadata -> seriesId
+    is Task.AggregateSeriesMetadata -> seriesId
+    is Task.RefreshSeriesLocalArtwork -> seriesId
+    is Task.DeleteSeries -> seriesId
+    is Task.ImportBook -> seriesId
+    else -> this.groupId
+  }
+
+private fun Task.bookId(): String? =
+  when (this) {
+    is Task.AnalyzeBook -> bookId
+    is Task.VerifyBookHash -> bookId
+    is Task.GenerateBookThumbnail -> bookId
+    is Task.RefreshBookMetadata -> bookId
+    is Task.RefreshBookLocalArtwork -> bookId
+    is Task.ConvertBook -> bookId
+    is Task.RepairExtension -> bookId
+    is Task.RemoveHashedPages -> bookId
+    is Task.HashBook -> bookId
+    is Task.HashBookKoreader -> bookId
+    is Task.HashBookPages -> bookId
+    is Task.DeleteBook -> bookId
+    else -> null
+  }

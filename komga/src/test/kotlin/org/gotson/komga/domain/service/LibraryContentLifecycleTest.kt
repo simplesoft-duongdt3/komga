@@ -99,6 +99,7 @@ class LibraryContentLifecycleTest(
   fun beforeEach() {
     every { mockTaskEmitter.refreshBookMetadata(any<Book>(), any()) } just Runs
     every { mockTaskEmitter.refreshSeriesMetadata(any<String>(), any()) } just Runs
+    every { mockTaskEmitter.refreshSeriesMetadata(any<Collection<String>>(), any()) } just Runs
     every { mockTaskEmitter.verifyBookHash(any(), any()) } just Runs
   }
 

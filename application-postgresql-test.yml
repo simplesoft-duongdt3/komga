@@ -1,28 +1,4 @@
 spring:
-  datasource:
-    main:
-      type: com.zaxxer.hikari.HikariDataSource
-      jdbc-url: jdbc:postgresql://localhost:5433/komga
-      username: komga
-      password: komga123
-      driver-class-name: org.postgresql.Driver
-      hikari:
-        maximum-pool-size: 10
-        minimum-idle: 2
-        connection-timeout: 30000
-        idle-timeout: 600000
-        max-lifetime: 1800000
-    tasks:
-      type: com.zaxxer.hikari.HikariDataSource
-      jdbc-url: jdbc:sqlite:file:${user.home}/.komga/tasks.sqlite?foreign_keys=on&busy_timeout=10000&journal_mode=WAL&synchronous=NORMAL
-      driver-class-name: org.sqlite.JDBC
-      hikari:
-        maximum-pool-size: 1
-        minimum-idle: 1
-        connection-timeout: 30000
-        idle-timeout: 600000
-        max-lifetime: 1800000
-
   flyway:
     enabled: true
     locations: classpath:db/migration/postgresql
@@ -44,6 +20,18 @@ spring:
 komga:
   database:
     type: POSTGRESQL
+    url: jdbc:postgresql://localhost:5433/komga
+    username: komga
+    password: komga123
+    pool-size: 10
+    max-pool-size: 10
+  tasks-db:
+    type: POSTGRESQL
+    url: jdbc:postgresql://localhost:5433/komga_tasks
+    username: komga
+    password: komga123
+    pool-size: 25
+    max-pool-size: 25
 
 server:
   port: 25601

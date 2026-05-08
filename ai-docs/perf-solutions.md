@@ -403,20 +403,25 @@ This would distribute the entire scan across all available threads, maximizing t
 | 3 | `TaskProcessor.kt:61-72` | Worker loop replaces recursive dispatch | Removes `hasAvailable()` from hot path |
 | 4 | `DataSourcesConfiguration.kt:50-51` | Pool size `max(cpu×3, 25)` | Supports 20 threads without connection waits |
 
-### Test Results
+### Test Results — PostgreSQL
+
+All critical tests verified against PostgreSQL 15 (connection: `localhost:5433`, database: `komga` / `komga_tasks`):
 
 ```
-$ ./gradlew :komga:test --tests "org.gotson.komga.infrastructure.jooq.tasks.TasksDaoTest"
-BUILD SUCCESSFUL — 11 tests passed
-
-$ ./gradlew :komga:test --tests "org.gotson.komga.application.tasks.TaskProcessorTest"
-BUILD SUCCESSFUL — 2 tests passed
-
-$ ./gradlew :komga:test --tests "org.gotson.komga.interfaces.api.rest.TaskControllerTest"
-BUILD SUCCESSFUL — all tests passed
+$ ./gradlew :komga:test \
+    --tests "org.gotson.komga.infrastructure.jooq.tasks.TasksDaoTest" \
+    --tests "org.gotson.komga.application.tasks.TaskProcessorTest" \
+    --tests "org.gotson.komga.interfaces.api.rest.TaskControllerTest*" \
+    --tests "org.gotson.komga.infrastructure.datasource.DataSourcesConfigurationTest*" \
+    -Dspring.profiles.active=postgresql-test
+BUILD SUCCESSFUL
 
 $ ./gradlew :komga:compileKotlin
 BUILD SUCCESSFUL — no new warnings
 ```
+- **TasksDaoTest** (14 tests) — verifies `takeFirst()` with `FOR UPDATE SKIP LOCKED` + `NOT EXISTS`
+- **TaskProcessorTest** (2 tests) — verifies worker loop dispatch
+- **TaskControllerTest** (all API controller tests) — verifies end-to-end task queue
+- **DataSourcesConfigurationTest** — verifies connection pool configuration
 
 All 4 fixes are **backward-compatible**: SQLite deployments are unaffected (conditionals guard PostgreSQL-only features), and the worker loop pattern works identically for any pool size.

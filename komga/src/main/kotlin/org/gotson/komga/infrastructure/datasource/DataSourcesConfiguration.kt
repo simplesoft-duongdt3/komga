@@ -43,8 +43,12 @@ class DataSourcesConfiguration(
 
           DatabaseType.POSTGRESQL ->
             if (komgaProperties.tasksDb.poolSize == null && komgaProperties.tasksDb.maxPoolSize == 1) {
-              // for PostgreSQL, if user didn't specify poolSize and maxPoolSize is at default (1), default to something better for tasks
-              this.maximumPoolSize = 10
+              // for PostgreSQL, if user didn't specify poolSize and maxPoolSize is at default (1),
+              // default to a pool large enough for concurrent task processors (up to ~20 threads).
+              // With FOR UPDATE SKIP LOCKED, claim operations are very fast, so the pool doesn't
+              // need to be 1:1 with threads, but should never be the bottleneck.
+              val cpuCores = Runtime.getRuntime().availableProcessors()
+              this.maximumPoolSize = (cpuCores * 3).coerceAtLeast(25)
             }
         }
       }

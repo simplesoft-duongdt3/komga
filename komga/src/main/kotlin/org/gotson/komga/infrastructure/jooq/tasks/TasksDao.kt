@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.application.tasks.Task
 import org.gotson.komga.application.tasks.TasksRepository
+import org.gotson.komga.infrastructure.datasource.DatabaseType
 import org.gotson.komga.infrastructure.jooq.SplitDslDaoBase
 import org.gotson.komga.jooq.tasks.Tables
 import org.jooq.DSLContext
@@ -26,6 +27,7 @@ class TasksDao(
   @Qualifier("tasksDslContextRW") dslRW: DSLContext,
   @Qualifier("tasksDslContextRO") dslRO: DSLContext,
   @param:Value("#{@komgaProperties.tasksDb.batchChunkSize}") private val batchSize: Int,
+  @param:Value("#{@komgaProperties.tasksDb.type}") private val databaseType: DatabaseType,
   private val objectMapper: ObjectMapper,
 ) : SplitDslDaoBase(dslRW, dslRO),
   TasksRepository {
@@ -51,6 +53,9 @@ class TasksDao(
     )
 
   override fun takeFirst(owner: String): Task? {
+    val skipLocked =
+      if (databaseType == DatabaseType.POSTGRESQL) "  FOR UPDATE SKIP LOCKED" else ""
+
     val record =
       dslRW
         .resultQuery(
@@ -61,15 +66,16 @@ class TasksDao(
             WHERE "OWNER" IS NULL
               AND (
                 "GROUP_ID" IS NULL
-                OR "GROUP_ID" NOT IN (
-                  SELECT "GROUP_ID"
-                  FROM "TASK"
-                  WHERE "OWNER" IS NOT NULL
-                    AND "GROUP_ID" IS NOT NULL
+                OR NOT EXISTS (
+                  SELECT 1 FROM "TASK" t2
+                  WHERE t2."GROUP_ID" = "TASK"."GROUP_ID"
+                    AND t2."OWNER" IS NOT NULL
+                    AND t2."GROUP_ID" IS NOT NULL
                 )
               )
             ORDER BY "PRIORITY" DESC, "LAST_MODIFIED_DATE"
             LIMIT 1
+$skipLocked
           )
           UPDATE "TASK"
           SET "OWNER" = ?

@@ -43,12 +43,13 @@ class TaskProcessor(
   @EventListener(TaskAddedEvent::class, ApplicationReadyEvent::class)
   fun processAvailableTask() {
     if (processTasks) {
-      logger.debug { "Active count: ${executor.activeCount}, Core Pool Size: ${executor.corePoolSize}, Pool Size: ${executor.poolSize}" }
-      if (executor.corePoolSize == 1) {
-        executor.execute { takeAndProcess() }
-      } else {
-        // fan out while threads are available
-        while (tasksRepository.hasAvailable() && executor.activeCount < executor.corePoolSize) {
+      val currentActive = executor.activeCount
+      logger.debug { "Active count: $currentActive, Core Pool Size: ${executor.corePoolSize}, Pool Size: ${executor.poolSize}" }
+
+      // fill up to corePoolSize worker threads
+      val slotsFree = executor.corePoolSize - currentActive
+      if (slotsFree > 0) {
+        repeat(slotsFree) {
           executor.execute { takeAndProcess() }
         }
       }
@@ -59,15 +60,14 @@ class TaskProcessor(
 
   private fun takeAndProcess() {
     logger.debug { "Try to process first available task" }
-    val task = tasksRepository.takeFirst()
-    if (task != null) {
+    var task = tasksRepository.takeFirst()
+    while (task != null) {
       logger.debug { "Found task to process: $task" }
       taskHandler.handleTask(task)
       logger.debug { "Task processed, remove it from the queue: $task" }
       tasksRepository.delete(task.uniqueId)
-      processAvailableTask()
-    } else {
-      logger.debug { "No available task found" }
+      task = tasksRepository.takeFirst()
     }
+    logger.debug { "No available task found, going idle" }
   }
 }

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Komga DB · Live</title>
+<style>
+:root{--bg:#090d13;--side:#0d1117;--card:#131820;--border:#1e2530;--text:#e6edf3;
+  --muted:#69798c;--blue:#58a6ff;--green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --purple:#a371f7;--cyan:#39d2c0;--orange:#f0883e;--radius:8px;}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  display:flex;min-height:100vh}
+/* ── sidebar ── */
+nav{width:200px;background:var(--side);border-right:1px solid var(--border);padding:20px 0;
+  display:flex;flex-direction:column;flex-shrink:0}
+nav .logo{font-size:15px;font-weight:700;padding:0 20px 20px;letter-spacing:-.3px}
+nav .logo span{color:var(--blue)}
+nav a{display:block;padding:8px 20px;color:var(--muted);text-decoration:none;
+  font-size:13px;transition:all .15s;border-left:3px solid transparent}
+nav a:hover,nav a.active{color:var(--text);background:rgba(255,255,255,.03);border-left-color:var(--blue)}
+nav .version{padding:20px;margin-top:auto;font-size:11px;color:var(--muted);border-top:1px solid var(--border)}
+/* ── main ── */
+main{flex:1;padding:24px 28px;overflow-x:hidden}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.header h1{font-size:20px;font-weight:600}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;
+  animation:pulse 2s infinite}
+.status-dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-dot.yellow{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.status-dot.red{background:var(--red);box-shadow:0 0 6px var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.header-right{display:flex;align-items:center;gap:16px;font-size:12px;color:var(--muted)}
+.refresh-indicator{display:flex;align-items:center;gap:6px}
+/* ── kpi row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.kpi-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.kpi-value{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:2px}
+/* ── panels ── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+  margin-bottom:16px;overflow:hidden}
+.panel-header{display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;
+  color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.panel-body{padding:14px 16px}
+/* ── grid ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:900px){.g2{grid-template-columns:1fr}}
+/* ── table ── */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl th{border-bottom:1px solid var(--border);color:var(--muted);font-weight:600;
+  padding:6px 10px;text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.4px}
+.tbl td{padding:6px 10px;border-bottom:1px solid rgba(255,255,255,.03);vertical-align:middle}
+.tbl tr:hover td{background:rgba(255,255,255,.015)}
+.tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+/* ── bar ── */
+.bar-track{background:rgba(255,255,255,.04);border-radius:3px;height:6px;overflow:hidden;min-width:60px}
+.bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.bar-blue{background:var(--blue)}.bar-green{background:var(--green)}
+.bar-yellow{background:var(--yellow)}.bar-purple{background:var(--purple)}
+.bar-red{background:var(--red)}
+/* ── sparkline ── */
+.spark{display:flex;align-items:flex-end;gap:2px;height:40px;padding:0 4px}
+.spark-bar{flex:1;min-width:2px;background:var(--blue);border-radius:1px 1px 0 0;
+  opacity:.6;transition:height .3s}
+.spark-bar:hover{opacity:1}
+/* ── tags ── */
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.3px}
+.t-ok{background:rgba(63,185,80,.15);color:var(--green)}
+.t-warn{background:rgba(210,153,34,.15);color:var(--yellow)}
+.t-bad{background:rgba(248,81,73,.15);color:var(--red)}
+.t-info{background:rgba(88,166,255,.12);color:var(--blue)}
+/* ── tabs (in-page) ── */
+.tabs{display:flex;gap:0;margin-bottom:16px}
+.tab-btn{background:0;border:1px solid var(--border);color:var(--muted);padding:6px 16px;
+  font-size:12px;cursor:pointer;transition:all .15s}
+.tab-btn:first-child{border-radius:var(--radius) 0 0 var(--radius)}
+.tab-btn:last-child{border-radius:0 var(--radius) var(--radius) 0}
+.tab-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.tab-btn:hover:not(.active){color:var(--text);background:rgba(255,255,255,.03)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+/* ── type colors ── */
+.tc0{color:var(--blue)}.tc1{color:var(--cyan)}.tc2{color:var(--green)}
+.tc3{color:var(--yellow)}.tc4{color:var(--purple)}.tc5{color:var(--orange)}
+/* ── duration bars ── */
+.dur-row{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.dur-label{width:160px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dur-bars{flex:1;display:flex;flex-direction:column;gap:2px}
+.dur-bar-row{display:flex;align-items:center;gap:4px;font-size:10px}
+.dur-bar-row .pct{width:28px;color:var(--muted);text-align:right;flex-shrink:0}
+.empty-state{color:var(--muted);font-style:italic;padding:20px 0;text-align:center}
+.mono{font-family:'SF Mono',SFMono-Regular,ui-monospace,monospace;font-size:11px}
+pre.mono{white-space:pre-wrap;color:var(--muted);padding:8px;background:rgba(0,0,0,.2);
+  border-radius:4px;max-height:200px;overflow:auto}
+</style>
+</head>
+<body>
+<nav>
+<div class="logo">Komga<span>DB</span></div>
+<a href="#" class="active" data-tab="overview">Overview</a>
+<a href="#" data-tab="tasks">Task Execution</a>
+<a href="#" data-tab="db">Database</a>
+<div class="version" id="nav-status">connecting…</div>
+</nav>
+<main>
+<div class="header">
+<div><h1>Live Performance</h1></div>
+<div class="header-right">
+<span class="refresh-indicator"><span id="status-dot" class="status-dot green"></span><span id="stamp"></span></span>
+<span id="latency"></span>
+</div>
+</div>
+
+<div class="tabs">
+<button class="tab-btn active" data-tab="overview">Overview</button>
+<button class="tab-btn" data-tab="tasks">Task Execution</button>
+<button class="tab-btn" data-tab="db">Database</button>
+</div>
+
+<!-- ── OVERVIEW ── -->
+<div id="tab-overview" class="tab-panel active">
+<div class="kpi-row" id="kpis"></div>
+<div class="g2">
+<div class="panel"><div class="panel-header">Throughput — last 24h <span class="tag t-info">tasks/h</span></div><div class="panel-body"><div class="spark" id="sparkline"></div></div></div>
+<div class="panel"><div class="panel-header">Duration by Type</div><div class="panel-body" id="dur-bars"></div></div>
+</div>
+<div class="g2">
+<div class="panel"><div class="panel-header">Queue Delay — last hour</div><div class="panel-body" id="queue-delay"></div></div>
+<div class="panel"><div class="panel-header">Recent Executions</div><div class="panel-body" id="recent-exec"></div></div>
+</div>
+<div class="g2">
+<div class="panel"><div class="panel-header">Group Queue Breakdown</div><div class="panel-body" id="group-queue"></div></div>
+<div class="panel"><div class="panel-header">Running Tasks</div><div class="panel-body" id="running-tasks"></div></div>
+</div>
+</div>
+
+<!-- ── TASK EXECUTION ── -->
+<div id="tab-tasks" class="tab-panel">
+<div class="panel"><div class="panel-header">Type Breakdown</div><div class="panel-body"><table class="tbl" id="type-table"></table></div></div>
+<div class="panel"><div class="panel-header">Recent Failures</div><div class="panel-body" id="failures"></div></div>
+</div>
+
+<!-- ── DATABASE ── -->
+<div id="tab-db" class="tab-panel">
+<div class="g2">
+<div class="panel"><div class="panel-header">Indexes</div><div class="panel-body" id="idx-list"></div></div>
+<div class="panel"><div class="panel-header">Query Plan</div><div class="panel-body"><pre class="mono" id="explain"></pre></div></div>
+</div>
+<div class="g2">
+<div class="panel"><div class="panel-header">Active Queries</div><div class="panel-body" id="activity"></div></div>
+<div class="panel"><div class="panel-header">Table Health</div><div class="panel-body" id="table-health"></div></div>
+</div>
+<div class="panel"><div class="panel-header">PostgreSQL Configuration</div><div class="panel-body" id="pgcfg"></div></div>
+</div>
+</main>
+
+<script>window.KOMGA_REFRESH_SEC = __REFRESH_SEC__;</script>
+<script src="/dashboard.js"></script>
+</body>
+</html>

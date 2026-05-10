@@ -19,8 +19,7 @@ class DbConfig:
 @dataclass
 class LibraryConfig:
     library_id: str = "0Q3CKC76902B7"
-    real_root_path: str = "/volume1/Shared/my-library/data-books-audiobooks/Manga_Ebook/Manhwa"
-    docker_root_path: str = "/data/data-books-audiobooks/Manga_Ebook/Manhwa"
+    library_root_path: str = "/data/data-books-audiobooks/Manga_Ebook/Manhwa"
     scan_workers: int = 0
 
 
@@ -48,8 +47,7 @@ class Config:
         cfg.db.min_connections = int(os.environ.get("KOMGA_DB_MIN_CONN", cfg.db.min_connections))
         cfg.db.max_connections = int(os.environ.get("KOMGA_DB_MAX_CONN", cfg.db.max_connections))
         cfg.library.library_id = os.environ.get("KOMGA_LIBRARY_ID", cfg.library.library_id)
-        cfg.library.real_root_path = os.environ.get("KOMGA_REAL_ROOT", cfg.library.real_root_path)
-        cfg.library.docker_root_path = os.environ.get("KOMGA_DOCKER_ROOT", cfg.library.docker_root_path)
+        cfg.library.library_root_path = os.environ.get("KOMGA_LIBRARY_ROOT", cfg.library.library_root_path)
         cfg.library.scan_workers = int(os.environ.get("KOMGA_SCAN_WORKERS", cfg.library.scan_workers))
         cfg.sync.commit_batch_size = int(os.environ.get("KOMGA_BATCH_SIZE", cfg.sync.commit_batch_size))
         return cfg

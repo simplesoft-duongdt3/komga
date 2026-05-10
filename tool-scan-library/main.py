@@ -14,8 +14,8 @@ Usage:
     # Export SQL to file instead of writing directly to DB
     python main.py --export-sql sync.sql
 
-    # Sync with explicit paths
-    python main.py --real-root /path/to/library --docker-root /data/library --library-id XYZ
+    # Sync with explicit path
+    python main.py --library-root /data/library --library-id XYZ
 
     # Sync with write credentials
     python main.py --write-user komga_admin --write-pass secret
@@ -49,8 +49,7 @@ Environment variables:
     KOMGA_DB_MIN_CONN      Min pool connections (default: 2)
     KOMGA_DB_MAX_CONN      Max pool connections (default: 10)
     KOMGA_LIBRARY_ID       Library ID (default: 0Q3CKC76902B7)
-    KOMGA_REAL_ROOT        Real filesystem root path
-    KOMGA_DOCKER_ROOT      Docker container root path
+    KOMGA_LIBRARY_ROOT     Library root path (same as mounted in Komga)
     KOMGA_SCAN_WORKERS     Scanner threads (default: cpu_count * 2, max 32)
     KOMGA_BATCH_SIZE       DB commit batch size (default: 5000)
 """
@@ -222,7 +221,7 @@ def _run_analyze(
 
     If export_file is set, SQL is written to that file instead of executing against the DB.
     """
-    analyzer = PdfAnalyzer(config.library.real_root_path, config.library.docker_root_path)
+    analyzer = PdfAnalyzer(config.library.library_root_path)
     max_workers = config.library.scan_workers or max(1, (os.cpu_count() or 4) * 2)
     max_workers = min(max_workers, 32)
     batch_size = config.sync.commit_batch_size
@@ -338,8 +337,7 @@ def main():
     parser.add_argument("--write-user", help="Write user")
     parser.add_argument("--write-pass", help="Write password")
     parser.add_argument("--library-id", help="Library ID")
-    parser.add_argument("--real-root", help="Real filesystem root path")
-    parser.add_argument("--docker-root", help="Docker container root path")
+    parser.add_argument("--library-root", help="Library root path (same as mounted in Komga)")
     parser.add_argument("--workers", type=int, help="Scanner thread count")
     parser.add_argument("--batch-size", type=int, help="DB commit batch size")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
@@ -370,21 +368,18 @@ def main():
         config.db.write_password = args.write_pass
     if args.library_id:
         config.library.library_id = args.library_id
-    if args.real_root:
-        config.library.real_root_path = args.real_root
-    if args.docker_root:
-        config.library.docker_root_path = args.docker_root
+    if args.library_root:
+        config.library.library_root_path = args.library_root
     if args.workers is not None:
         config.library.scan_workers = args.workers
     if args.batch_size is not None:
         config.sync.commit_batch_size = args.batch_size
 
-    if not config.library.real_root_path or not config.library.docker_root_path:
-        logger.error("Both --real-root and --docker-root are required.")
+    if not config.library.library_root_path:
+        logger.error("--library-root is required.")
         sys.exit(1)
 
-    logger.info("Real root:   %s", config.library.real_root_path)
-    logger.info("Docker root: %s", config.library.docker_root_path)
+    logger.info("Library root: %s", config.library.library_root_path)
     logger.info("Library ID:  %s", config.library.library_id)
     logger.info("DB:          %s:%d/%s", config.db.host, config.db.port, config.db.database)
     logger.info("Workers:     %d", config.library.scan_workers or max(1, (__import__("os").cpu_count() or 4) * 2))

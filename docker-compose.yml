@@ -55,6 +55,24 @@ services:
       - ./data:/data:ro
     restart: unless-stopped
 
+  scanner:
+    build: ./tool-scan-library
+    image: komga-scanner:latest
+    container_name: komga-scanner
+    environment:
+      KOMGA_DB_HOST: postgres
+      KOMGA_DB_PORT: 5432
+      KOMGA_DB_NAME: komga
+      KOMGA_DB_USER: komga
+      KOMGA_DB_PASS: komga123
+      KOMGA_DB_WRITE_USER: komga
+      KOMGA_DB_WRITE_PASS: komga123
+      KOMGA_LIBRARY_ROOT: /data/data-books-audiobooks/Manga_Ebook/Manhwa
+      KOMGA_LIBRARY_ID: 0Q3CKC76902B7
+      KOMGA_SCAN_WORKERS: 4
+    volumes:
+      - ./data:/data:ro
+
 volumes:
   postgres_data:
   komga_config:

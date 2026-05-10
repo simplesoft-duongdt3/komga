@@ -4,25 +4,14 @@ from typing import Any
 import fitz  # PyMuPDF
 
 
-def _docker_to_real_path(docker_path: str, real_root: str, docker_root: str) -> str:
-    """Map a Docker container path (possibly with file: URI prefix) to the real filesystem path."""
-    path = docker_path
-    if path.startswith("file:"):
-        path = path[5:]
-    docker_root = docker_root.rstrip("/")
-    real_root = real_root.rstrip("/")
-    if path.startswith(docker_root):
-        return real_root + path[len(docker_root):]
-    return path
-
-
 class PdfAnalyzer:
-    def __init__(self, real_root: str, docker_root: str):
-        self._real_root = real_root.rstrip("/")
-        self._docker_root = docker_root.rstrip("/")
+    def __init__(self, library_root: str):
+        self._library_root = library_root.rstrip("/")
 
     def _resolve_path(self, docker_path: str) -> str:
-        return _docker_to_real_path(docker_path, self._real_root, self._docker_root)
+        if docker_path.startswith("file:"):
+            return docker_path[5:]
+        return docker_path
 
     @staticmethod
     def get_page_count(path: str) -> int:

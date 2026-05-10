@@ -51,7 +51,7 @@ Filesystem Root
 - **Thumbnail matching**: 
   - Series: `poster.jpg`, `cover.jpg`, `default.jpg`, `folder.jpg`, `series.jpg`
   - Books: exact basename match then `{basename}-{number_padded}.jpg` fallback
-- **Path mapping**: `_to_docker_path(real_path, real_root, docker_root)` — converts real filesystem paths to Docker paths stored in DB
+- **Path handling**: Filesystem paths are stored as-is (identical to Komga's DB view since running in same Docker environment)
 
 ### Phase 2: Diff (`syncer.py`)
 
@@ -150,19 +150,37 @@ PDF analysis is CPU-bound for small files and I/O-bound for large ones. `ThreadP
 |--------|---------------|
 | `FILE_HASH` | `hashlib.sha256()` of entire file |
 
-## Path Mapping
+## Deployment Architecture
 
-Komga stores Docker container paths in the database (e.g., `/data/books/series/book.pdf`). The tool runs on the host filesystem with real paths (e.g., `/volume1/Shared/books/series/book.pdf`).
+The tool is designed to run inside the same Docker environment as Komga, sharing identical volume mounts. This eliminates the need for any path mapping — library file paths on disk are exactly the same as the paths stored in Komga's database.
 
-```python
-# Scanner: real → docker (stored in DB)
-def _to_docker_path(real_path, real_root, docker_root):
-    return docker_root + real_path[len(real_root):]
-
-# Analyzer: docker → real (to open files)
-def _docker_to_real_path(docker_path, real_root, docker_root):
-    return real_root + docker_path[len(docker_root):]
 ```
+┌─────────────────────────────────────────────────┐
+│  Docker / Server                                 │
+│                                                   │
+│  ┌──────────┐   ┌──────────┐   ┌───────────┐    │
+│  │ postgres │   │  komga   │   │  scanner  │    │
+│  │   :5432  │   │ :25600   │   │ (one-off) │    │
+│  └────┬─────┘   └────┬─────┘   └─────┬─────┘    │
+│       │              │               │           │
+│       └──────────────┼───────────────┘           │
+│                      │                           │
+│               ┌──────┴──────┐                    │
+│               │   /data     │  ← shared volume   │
+│               │  (books)    │     (read-only)    │
+│               └─────────────┘                    │
+└─────────────────────────────────────────────────┘
+```
+
+When running outside Docker (e.g., for development), set `--library-root` to the local filesystem path. Inside Docker, set it to the container path (identical to Komga's view).
+
+### `file:` URI Prefix Handling
+
+Komga occasionally stores book URLs with a Java `file:` URI prefix (e.g., `file:/data/books/book.pdf`). The analyzer strips this prefix in `_resolve_path()` before opening files. No other path conversion is performed.
+
+## Path Mapping (Removed)
+
+Previous versions required two path arguments (`--real-root` and `--docker-root`) to map between host filesystem paths and Docker container paths. This complexity is eliminated by running the tool inside the same Docker environment — paths are identical and no conversion is needed.
 
 ## Performance Model
 

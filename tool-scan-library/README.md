@@ -29,8 +29,7 @@ export KOMGA_DB_USER=ai_readonly
 export KOMGA_DB_PASS=ai_readonly_pass
 export KOMGA_DB_WRITE_USER=komga_admin
 export KOMGA_DB_WRITE_PASS=secret
-export KOMGA_REAL_ROOT=/path/to/library
-export KOMGA_DOCKER_ROOT=/data/library
+export KOMGA_LIBRARY_ROOT=/data/library
 export KOMGA_LIBRARY_ID=0Q3CKC76902B7
 
 # Dry-run: scan only, no DB writes
@@ -59,8 +58,7 @@ All settings can be set via environment variables or command-line flags. CLI fla
 | `KOMGA_DB_MIN_CONN` | — | `2` | Min connection pool size |
 | `KOMGA_DB_MAX_CONN` | — | `10` | Max connection pool size |
 | `KOMGA_LIBRARY_ID` | `--library-id` | `0Q3CKC76902B7` | Komga library UUID |
-| `KOMGA_REAL_ROOT` | `--real-root` | — | Real filesystem path to library |
-| `KOMGA_DOCKER_ROOT` | `--docker-root` | — | Docker container path (as stored in DB) |
+| `KOMGA_LIBRARY_ROOT` | `--library-root` | — | Library root path (same as mounted in Komga) |
 | `KOMGA_SCAN_WORKERS` | `--workers` | `cpu_count × 2` (max 32) | Scanner/analyzer thread count |
 | `KOMGA_BATCH_SIZE` | `--batch-size` | `5000` | DB commit batch size |
 
@@ -75,8 +73,8 @@ python main.py --dry-run
 # Sync with defaults
 python main.py
 
-# Sync with explicit paths and credentials
-python main.py --real-root /mnt/library --docker-root /data/library \
+# Sync with explicit path
+python main.py --library-root /data/library \
   --write-user admin --write-pass secret
 
 # Export scan SQL to file (no direct DB writes)
@@ -107,6 +105,28 @@ python main.py --analyze --analyze-sql analyze.sql
 # Full pipeline with SQL export for both phases
 python main.py --analyze --export-sql scan.sql --analyze-sql analyze.sql
 ```
+
+## Docker Deployment
+
+The tool can run inside the same Docker environment as Komga with identical volume mounts, eliminating the need for path mapping.
+
+```bash
+# Build the scanner image
+cd tool-scan-library
+docker build -t komga-scanner:latest .
+
+# Run as a one-off container alongside Komga
+docker compose run --rm scanner --dry-run
+
+# Full sync + analyze from within Docker
+docker compose run --rm scanner --analyze --no-hash
+
+# Export SQL for safe production deployment
+docker compose run --rm scanner --export-sql scan.sql
+docker compose run --rm scanner --analyze --analyze-sql analyze.sql
+```
+
+When running inside Docker, the `--library-root` path is the same as what Komga stores in the database — no conversion needed. Set `KOMGA_LIBRARY_ROOT` to the container path (e.g., `/data/data-books-audiobooks/Manga_Ebook/Manhwa`).
 
 ## Two-Phase Workflow
 
@@ -178,13 +198,12 @@ tool-scan-library/
 
 - Only PDF books (`.pdf`) are supported. EPUB and CBZ are not scanned by this tool.
 - SIDECAR JPG thumbnails from the filesystem are the only thumbnail type created. GENERATED thumbnails are never produced — Komga's frontend uses SIDECAR first, then GENERATED as fallback.
-- The tool maps Docker paths (`/data/...`) to real filesystem paths for file access, matching the path format stored in Komga's database.
+- When running inside the same Docker environment as Komga, library paths are identical — no path conversion needed. The tool uses the filesystem path directly, which matches what Komga stores in the DB.
 - MEDIA_PAGE dimensions use `cropBox` (not `mediaBox`) to match Komga's PDF analyzer behavior.
 
 
 cd /Users/teamcumahay/Documents/GitHub/komga/tool-scan-library && python3 main.py \
-  --real-root "/Users/teamcumahay/Downloads/ThienThaiTruyen1" \
-  --docker-root "/data/data-books-audiobooks/Manga_Ebook/Manhwa" \
+  --library-root "/Users/teamcumahay/Downloads/ThienThaiTruyen1" \
   --export-sql /tmp/test-scan2.sql \
   --analyze --analyze-sql /tmp/test-analyze.sql \
   --analyze-limit 3 \

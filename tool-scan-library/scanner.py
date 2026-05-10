@@ -12,14 +12,6 @@ def _utcnow() -> datetime:
     return datetime.utcnow()
 
 
-def _to_docker_path(real_path: str, real_root: str, docker_root: str) -> str:
-    real_root = real_root.rstrip("/")
-    docker_root = docker_root.rstrip("/")
-    if real_path.startswith(real_root):
-        return docker_root + real_path[len(real_root):]
-    return real_path
-
-
 def _natural_sort_key(name: str) -> tuple:
     """Split a string into text and number parts for natural sorting."""
     parts = re.split(r"(\d+)", name.lower())
@@ -72,8 +64,7 @@ def _parse_series_json(filepath: str) -> dict[str, Any] | None:
 
 def _scan_single_series(
     dir_entry: os.DirEntry,
-    real_root: str,
-    docker_root: str,
+    library_root: str,
     library_id: str,
 ) -> dict[str, Any] | None:
     """Scan a single series directory. Returns a series dict or None if skipped."""
@@ -84,7 +75,7 @@ def _scan_single_series(
         return None
 
     dir_path = dir_entry.path
-    series_url = _to_docker_path(dir_path, real_root, docker_root)
+    series_url = dir_path
 
     # Collect book files (PDFs) and thumbnails
     book_files: list[dict] = []
@@ -151,7 +142,7 @@ def _scan_single_series(
         b["number_str"] = str(num)
         b["number_sort"] = float(num)
         b["library_id"] = library_id
-        b["url"] = _to_docker_path(b["path"], real_root, docker_root)
+        b["url"] = b["path"]
         b["title"] = b["name"]
 
     # Build series metadata from series.json
@@ -191,7 +182,7 @@ def _scan_single_series(
     if series_thumbnail:
         result["series_thumbnail"] = {
             "path": series_thumbnail["path"],
-            "url": _to_docker_path(series_thumbnail["path"], real_root, docker_root),
+            "url": series_thumbnail["path"],
             "file_size": series_thumbnail["file_size"],
             "file_last_modified": series_thumbnail["file_last_modified"],
             "media_type": series_thumbnail["media_type"],
@@ -213,7 +204,7 @@ def _scan_single_series(
                 continue
             b["book_thumbnail"] = {
                 "path": thumb_path,
-                "url": _to_docker_path(thumb_path, real_root, docker_root),
+                "url": thumb_path,
                 "file_size": thumb_stat.st_size,
                 "file_last_modified": thumb_stat.st_mtime,
                 "media_type": "image/jpeg",
@@ -227,8 +218,7 @@ def scan_library(config: Config) -> dict[str, dict[str, Any]]:
 
     Returns a dict of {docker_url: series_dict} for all series found on disk.
     """
-    real_root = config.library.real_root_path
-    docker_root = config.library.docker_root_path
+    library_root = config.library.library_root_path
     library_id = config.library.library_id
     max_workers = config.library.scan_workers or max(1, (os.cpu_count() or 4) * 2)
     max_workers = min(max_workers, 32)
@@ -236,18 +226,18 @@ def scan_library(config: Config) -> dict[str, dict[str, Any]]:
     # Collect all subdirectory entries
     dir_entries: list[os.DirEntry] = []
     try:
-        with os.scandir(real_root) as entries:
+        with os.scandir(library_root) as entries:
             for entry in entries:
                 if entry.is_dir() and not entry.name.startswith("."):
                     dir_entries.append(entry)
     except OSError as e:
-        raise RuntimeError(f"Cannot scan library root {real_root}: {e}") from e
+        raise RuntimeError(f"Cannot scan library root {library_root}: {e}") from e
 
     series_map: dict[str, dict[str, Any]] = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {
-            executor.submit(_scan_single_series, entry, real_root, docker_root, library_id): entry.name
+            executor.submit(_scan_single_series, entry, library_root, library_id): entry.name
             for entry in dir_entries
         }
         for future in as_completed(futures):
@@ -264,8 +254,7 @@ def scan_library(config: Config) -> dict[str, dict[str, Any]]:
 
 if __name__ == "__main__":
     cfg = Config()
-    cfg.library.real_root_path = "/Users/teamcumahay/Downloads/ThienThaiTruyen"
-    cfg.library.docker_root_path = "/data/data-books-audiobooks/Manga_Ebook/Manhwa"
+    cfg.library.library_root_path = "/Users/teamcumahay/Downloads/ThienThaiTruyen"
     cfg.library.library_id = "TEST_LIBRARY"
     result = scan_library(cfg)
     print(f"Found {len(result)} series")

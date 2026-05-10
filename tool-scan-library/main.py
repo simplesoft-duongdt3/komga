@@ -23,6 +23,21 @@ Usage:
     # Sync with specific settings
     python main.py --workers 16 --batch-size 5000
 
+    # Full pipeline: scan + analyze (page count, dimensions, file hash)
+    python main.py --analyze
+
+    # Export scan SQL only
+    python main.py --export-sql scan.sql
+
+    # Export analyze SQL only (run after scan.sql is applied)
+    python main.py --analyze --analyze-sql analyze.sql
+
+    # Full pipeline with SQL export for both phases
+    python main.py --analyze --export-sql scan.sql --analyze-sql analyze.sql
+
+    # Analyze at most 100 books, skip hashing for speed
+    python main.py --analyze --analyze-limit 100 --no-hash
+
 Environment variables:
     KOMGA_DB_HOST          PostgreSQL host (default: 192.168.1.169)
     KOMGA_DB_PORT          PostgreSQL port (default: 5433)
@@ -43,15 +58,19 @@ Environment variables:
 from __future__ import annotations
 
 import argparse
+import datetime
 import logging
+import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from analyzer import PdfAnalyzer
 from config import Config
 from db import KomgaDb
 from scanner import scan_library
-from sql_exporter import export_sql
+from sql_exporter import export_sql, export_analyze_sql
 from syncer import diff, DiffResult
 
 
@@ -190,6 +209,119 @@ def _apply_diff(db: KomgaDb, dr: DiffResult, logger: logging.Logger) -> None:
     logger.info("Sync complete.")
 
 
+def _run_analyze(
+    db: KomgaDb,
+    config: Config,
+    limit: int | None,
+    skip_hash: bool,
+    skip_dimensions: bool,
+    logger: logging.Logger,
+    export_file: str | None = None,
+) -> None:
+    """Analyze all books with MEDIA.STATUS='UNKNOWN', updating MEDIA, MEDIA_PAGE, and BOOK.FILE_HASH.
+
+    If export_file is set, SQL is written to that file instead of executing against the DB.
+    """
+    analyzer = PdfAnalyzer(config.library.real_root_path, config.library.docker_root_path)
+    max_workers = config.library.scan_workers or max(1, (os.cpu_count() or 4) * 2)
+    max_workers = min(max_workers, 32)
+    batch_size = config.sync.commit_batch_size
+
+    books = db.fetch_unanalyzed_books(limit=limit)
+    total = len(books)
+    if total == 0:
+        logger.info("No unanalyzed books found. All books have been analyzed.")
+        return
+
+    logger.info("Found %d books with UNKNOWN media status. Using %d workers.", total, max_workers)
+
+    processed = 0
+    errors = 0
+
+    def _analyze_one(book_row: dict) -> tuple[str, str | None, dict | None]:
+        book_id = book_row["ID"]
+        docker_url = book_row["URL"]
+        try:
+            result = analyzer.analyze(docker_url, skip_dimensions=skip_dimensions, skip_hash=skip_hash)
+            return (book_id, None, result)
+        except Exception as e:
+            return (book_id, str(e), None)
+
+    f: Any = None
+    if export_file:
+        f = open(export_file, "w", encoding="utf-8")
+        export_now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        f.write("-- Komga analyze — generated SQL\n")
+        f.write(f"-- Generated at: {export_now}\n")
+        f.write(f"-- Books to analyze: {total}\n")
+        f.write("BEGIN;\n\n")
+
+    try:
+        for batch_start in range(0, total, batch_size):
+            batch = books[batch_start:batch_start + batch_size]
+            batch_num = batch_start // batch_size + 1
+            total_batches = (total + batch_size - 1) // batch_size
+            logger.info("Analyzing batch %d/%d (%d books)...", batch_num, total_batches, len(batch))
+
+            media_updates: list[dict] = []
+            book_hash_updates: list[dict] = []
+            all_pages: list[dict] = []
+
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_analyze_one, b): b["ID"] for b in batch}
+                for future in as_completed(futures):
+                    book_id, error, result = future.result()
+                    if error:
+                        media_updates.append({
+                            "book_id": book_id,
+                            "status": "ERROR",
+                            "page_count": 0,
+                            "media_type": None,
+                            "comment": error[:2000],
+                        })
+                        errors += 1
+                    else:
+                        media_updates.append({
+                            "book_id": book_id,
+                            "status": "READY",
+                            "page_count": result["page_count"],
+                            "media_type": "application/pdf",
+                            "comment": None,
+                        })
+                        if result["file_hash"]:
+                            book_hash_updates.append({
+                                "book_id": book_id,
+                                "file_hash": result["file_hash"],
+                            })
+                        for page in result["pages"]:
+                            all_pages.append({
+                                "book_id": book_id,
+                                **page,
+                            })
+
+            if f is not None:
+                batch_now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+                export_analyze_sql(f, media_updates, book_hash_updates, all_pages, batch_now, logger)
+            else:
+                if media_updates:
+                    db.update_media_analyzed(media_updates)
+                if book_hash_updates:
+                    db.update_book_hashes(book_hash_updates)
+                if all_pages:
+                    db.insert_media_pages_batch(all_pages)
+
+            processed += len(batch)
+            logger.info("  Progress: %d/%d (errors: %d)", processed, total, errors)
+
+    finally:
+        if f is not None:
+            f.write("COMMIT;\n")
+            f.close()
+            logger.info("Analyze SQL written to %s", export_file)
+
+    logger.info("Analysis complete: %d processed, %d errors, %d OK", processed, errors, processed - errors)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Komga fast library scan and sync tool (PDF + JPG thumbnails + Mylar series.json)",
@@ -211,6 +343,11 @@ def main():
     parser.add_argument("--workers", type=int, help="Scanner thread count")
     parser.add_argument("--batch-size", type=int, help="DB commit batch size")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
+    parser.add_argument("--analyze", action="store_true", help="Analyze UNKNOWN books (page count, dimensions, file hash)")
+    parser.add_argument("--analyze-limit", type=int, default=None, help="Max books to analyze")
+    parser.add_argument("--no-hash", action="store_true", help="Skip SHA-256 hashing during analysis")
+    parser.add_argument("--no-dimensions", action="store_true", help="Skip page dimensions during analysis")
+    parser.add_argument("--analyze-sql", metavar="FILE", help="Export analyze SQL to file instead of writing to DB")
     args = parser.parse_args()
 
     logger = _configure_logging(args.verbose)
@@ -297,6 +434,21 @@ def main():
         else:
             logger.info("Phase 3: Applying changes...")
             _apply_diff(db, dr, logger)
+
+        # Phase 4: Analyze (only if --analyze is set)
+        if args.analyze:
+            t4a = time.monotonic()
+            logger.info("Phase 4: Analyzing UNKNOWN books...")
+            _run_analyze(
+                db, config,
+                limit=args.analyze_limit,
+                skip_hash=args.no_hash,
+                skip_dimensions=args.no_dimensions,
+                logger=logger,
+                export_file=args.analyze_sql,
+            )
+            t4b = time.monotonic()
+            logger.info("Analysis completed in %.2fs", t4b - t4a)
 
         t4 = time.monotonic()
         logger.info("Total time: %.2fs", t4 - t0)

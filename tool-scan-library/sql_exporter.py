@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 _TS = "%Y-%m-%d %H:%M:%S.%f"
 
+_SQL_MEDIA_PAGE_COLS = (
+    '"BOOK_ID"', '"NUMBER"', '"FILE_NAME"', '"MEDIA_TYPE"',
+    '"WIDTH"', '"HEIGHT"', '"CREATED_DATE"', '"LAST_MODIFIED_DATE"',
+)
+
 _SQL_BOOK_COLS = (
     '"ID"', '"CREATED_DATE"', '"LAST_MODIFIED_DATE"',
     '"FILE_LAST_MODIFIED"', '"NAME"', '"URL"', '"SERIES_ID"',
@@ -67,7 +72,7 @@ _SQL_BOOK_THUMB_COLS = (
 
 
 def _esc(val: Any) -> str:
-    """Escape a value for SQL. Returns NULL for None, quoted string for str/int/float/bool/bool."""
+    """Escape a value for SQL. Returns NULL for None, quoted string for str/int/float/bool."""
     if val is None:
         return "NULL"
     if isinstance(val, bool):
@@ -75,7 +80,6 @@ def _esc(val: Any) -> str:
     if isinstance(val, (int, float)):
         return str(val)
     if isinstance(val, datetime.datetime):
-        # PostgreSQL timestamp literal: 'YYYY-MM-DD HH:MM:SS.ffffff'
         return f"'{val.strftime(_TS)}'"
     if isinstance(val, datetime.date):
         return f"'{val.isoformat()}'"
@@ -197,12 +201,10 @@ def export_sql(f: TextIO, dr: DiffResult, logger: logging.Logger) -> None:
         _write_insert(f, "SERIES", _SQL_SERIES_COLS, s_rows)
         _write_insert(f, "SERIES_METADATA", _SQL_SERIES_META_COLS, sm_rows)
 
-        # Assign series_id to new books
         for book in dr.new_books:
             if "_series_idx" in book and "series_id" not in book:
                 book["series_id"] = series_ids[book["_series_idx"]]
 
-        # Assign series_id to new series thumbnails
         for thumb in dr.new_series_thumbnails:
             if "_series_idx" in thumb:
                 thumb["series_id"] = series_ids[thumb["_series_idx"]]
@@ -242,7 +244,6 @@ def export_sql(f: TextIO, dr: DiffResult, logger: logging.Logger) -> None:
         _write_insert(f, "BOOK_METADATA", _SQL_BOOK_META_COLS, bm_rows)
         _write_insert(f, "MEDIA", _SQL_MEDIA_COLS, m_rows)
 
-        # Assign book_id to new book thumbnails
         for thumb in dr.new_book_thumbnails:
             if "_book_idx" in thumb and "book_id" not in thumb:
                 idx = thumb["_book_idx"]
@@ -324,3 +325,76 @@ def export_sql(f: TextIO, dr: DiffResult, logger: logging.Logger) -> None:
 
     f.write("COMMIT;\n")
     logger.info("SQL export complete.")
+
+
+def export_analyze_sql(
+    f: TextIO,
+    media_updates: list[dict],
+    book_hash_updates: list[dict],
+    all_pages: list[dict],
+    now: datetime.datetime,
+    logger: logging.Logger,
+) -> None:
+    """Write analyze-phase SQL for one batch to the file handle."""
+    count_media = len(media_updates)
+    count_hash = len(book_hash_updates)
+    count_pages = len(all_pages)
+    if count_media == 0 and count_hash == 0 and count_pages == 0:
+        return
+
+    logger.info(
+        "  Writing analyze SQL: %d media updates, %d hash updates, %d page rows",
+        count_media, count_hash, count_pages,
+    )
+
+    # UPDATE MEDIA
+    for u in media_updates:
+        f.write(
+            f'UPDATE "MEDIA" SET '
+            f'"STATUS" = {_esc(u["status"])}, '
+            f'"PAGE_COUNT" = {_esc(u["page_count"])}, '
+            f'"MEDIA_TYPE" = {_esc(u["media_type"])}, '
+            f'"LAST_MODIFIED_DATE" = {_esc(now)}, '
+            f'"COMMENT" = {_esc(u.get("comment"))} '
+            f'WHERE "BOOK_ID" = {_esc(u["book_id"])};\n'
+        )
+    if media_updates:
+        f.write("\n")
+
+    # UPDATE BOOK (FILE_HASH)
+    for u in book_hash_updates:
+        f.write(
+            f'UPDATE "BOOK" SET '
+            f'"FILE_HASH" = {_esc(u["file_hash"])}, '
+            f'"LAST_MODIFIED_DATE" = {_esc(now)} '
+            f'WHERE "ID" = {_esc(u["book_id"])};\n'
+        )
+    if book_hash_updates:
+        f.write("\n")
+
+    # INSERT or UPDATE MEDIA_PAGE
+    if all_pages:
+        rows = [
+            (
+                p["book_id"],
+                p["number"],
+                p["file_name"],
+                p.get("media_type", ""),
+                p.get("width", 0),
+                p.get("height", 0),
+                now,
+                now,
+            )
+            for p in all_pages
+        ]
+        col_list = ", ".join(_SQL_MEDIA_PAGE_COLS)
+        f.write(f'INSERT INTO "MEDIA_PAGE" ({col_list}) VALUES\n')
+        f.write(_values_block(rows))
+        f.write(
+            '\nON CONFLICT ("BOOK_ID", "NUMBER") DO UPDATE SET '
+            '"FILE_NAME" = EXCLUDED."FILE_NAME", '
+            '"MEDIA_TYPE" = EXCLUDED."MEDIA_TYPE", '
+            '"WIDTH" = EXCLUDED."WIDTH", '
+            '"HEIGHT" = EXCLUDED."HEIGHT", '
+            '"LAST_MODIFIED_DATE" = EXCLUDED."LAST_MODIFIED_DATE";\n\n'
+        )

@@ -708,3 +708,134 @@ class KomgaDb:
             raise
         finally:
             self.put_conn(conn)
+
+    # ── ANALYSIS operations ──────────────────────────────────────────────
+
+    def fetch_unanalyzed_books(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """Return books with MEDIA.STATUS='UNKNOWN'. Returns [{ID, URL}, ...]."""
+        conn = self.get_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                sql = """
+                    SELECT b."ID", b."URL"
+                    FROM "BOOK" b
+                    JOIN "MEDIA" m ON m."BOOK_ID" = b."ID"
+                    WHERE b."LIBRARY_ID" = %s
+                      AND m."STATUS" = 'UNKNOWN'
+                      AND b."DELETED_DATE" IS NULL
+                    ORDER BY b."CREATED_DATE"
+                """
+                params: list[Any] = [self._cfg.library.library_id]
+                if limit is not None:
+                    sql += " LIMIT %s"
+                    params.append(limit)
+                cur.execute(sql, params)
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            self.put_conn(conn)
+
+    def update_media_analyzed(self, updates: list[dict]) -> None:
+        """Batch UPDATE MEDIA: STATUS, PAGE_COUNT, MEDIA_TYPE, LAST_MODIFIED_DATE, COMMENT."""
+        if not updates:
+            return
+        conn = self.get_conn()
+        try:
+            now = _utcnow()
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    f"""
+                    UPDATE "MEDIA" SET
+                        "STATUS" = data."status",
+                        "PAGE_COUNT" = data."page_count",
+                        "MEDIA_TYPE" = data."media_type",
+                        "LAST_MODIFIED_DATE" = '{now_str}',
+                        "COMMENT" = data."comment"
+                    FROM (VALUES %s) AS data("book_id", "status", "page_count", "media_type", "comment")
+                    WHERE "MEDIA"."BOOK_ID" = data."book_id"
+                    """,
+                    [(u["book_id"], u["status"], u["page_count"], u["media_type"], u.get("comment")) for u in updates],
+                    template="(%s, %s, %s::integer, %s, %s)",
+                    page_size=self._cfg.sync.commit_batch_size,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.put_conn(conn)
+
+    def insert_media_pages_batch(self, pages: list[dict]) -> None:
+        """Batch INSERT/upsert MEDIA_PAGE rows. Uses ON CONFLICT DO UPDATE."""
+        if not pages:
+            return
+        conn = self.get_conn()
+        try:
+            now = _utcnow()
+            rows = [
+                (
+                    p["book_id"],
+                    p["number"],
+                    p["file_name"],
+                    p.get("media_type", ""),
+                    p.get("width", 0),
+                    p.get("height", 0),
+                    now,
+                    now,
+                )
+                for p in pages
+            ]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO "MEDIA_PAGE" (
+                        "BOOK_ID", "NUMBER", "FILE_NAME", "MEDIA_TYPE",
+                        "WIDTH", "HEIGHT", "CREATED_DATE", "LAST_MODIFIED_DATE"
+                    ) VALUES %s
+                    ON CONFLICT ("BOOK_ID", "NUMBER") DO UPDATE SET
+                        "FILE_NAME" = EXCLUDED."FILE_NAME",
+                        "MEDIA_TYPE" = EXCLUDED."MEDIA_TYPE",
+                        "WIDTH" = EXCLUDED."WIDTH",
+                        "HEIGHT" = EXCLUDED."HEIGHT",
+                        "LAST_MODIFIED_DATE" = EXCLUDED."LAST_MODIFIED_DATE"
+                    """,
+                    rows,
+                    page_size=self._cfg.sync.commit_batch_size,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.put_conn(conn)
+
+    def update_book_hashes(self, updates: list[dict]) -> None:
+        """Batch UPDATE BOOK.FILE_HASH and LAST_MODIFIED_DATE."""
+        if not updates:
+            return
+        conn = self.get_conn()
+        try:
+            now = _utcnow()
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    f"""
+                    UPDATE "BOOK" SET
+                        "FILE_HASH" = data."file_hash",
+                        "LAST_MODIFIED_DATE" = '{now_str}'
+                    FROM (VALUES %s) AS data("book_id", "file_hash")
+                    WHERE "BOOK"."ID" = data."book_id"
+                    """,
+                    [(u["book_id"], u["file_hash"]) for u in updates],
+                    template="(%s, %s)",
+                    page_size=self._cfg.sync.commit_batch_size,
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self.put_conn(conn)

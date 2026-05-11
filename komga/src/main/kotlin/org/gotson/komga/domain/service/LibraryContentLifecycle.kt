@@ -83,7 +83,7 @@ class LibraryContentLifecycle(
   fun scanRootFolder(
     library: Library,
     scanDeep: Boolean = false,
-  ) {
+  ): ScanRootFolderMetrics {
     val scanId = UUID.randomUUID().toString().substring(0, 8)
     val metrics = ScanRootFolderMetrics()
     val totalStartNanos = System.nanoTime()
@@ -427,6 +427,7 @@ class LibraryContentLifecycle(
       metrics.cleanupMs = cleanupMs
 
       val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000
+      metrics.totalMs = totalMs
       logger.info {
         "scanRootFolder completed status=ok scanId=$scanId libraryId=${library.id} scanDeep=$scanDeep totalMs=$totalMs scannedSeries=${metrics.scannedSeries} scannedBooks=${metrics.scannedBooks} scannedSidecars=${metrics.scannedSidecars} existingSeries=${metrics.existingSeries} existingScannedSeries=${metrics.existingScannedSeries} preloadedBooks=${metrics.preloadedBooks} deletedSeries=${metrics.deletedSeries} deletedBooks=${metrics.deletedBooks} createdSeries=${metrics.createdSeries} updatedSeries=${metrics.updatedSeries} addedBooks=${metrics.addedBooks} deferredHashBooks=${metrics.deferredHashBooks} outdatedBooks=${metrics.outdatedBooks} seriesRefreshQueued=${metrics.seriesRefreshQueued} changedSidecars=${metrics.changedSidecars} deletedSidecars=${metrics.deletedSidecars} filesystemScanMs=${metrics.filesystemScanMs} clearUnavailableMs=${metrics.clearUnavailableMs} loadExistingMs=${metrics.loadExistingMs} deleteMissingSeriesMs=${metrics.deleteMissingSeriesMs} deleteMissingBooksMs=${metrics.deleteMissingBooksMs} reconcileSeriesBooksMs=${metrics.reconcileSeriesBooksMs} sortAndRefreshMs=${metrics.sortAndRefreshMs} reconcileSidecarsMs=${metrics.reconcileSidecarsMs} cleanupSidecarsMs=${metrics.cleanupSidecarsMs} cleanupMs=${metrics.cleanupMs}"
       }
@@ -435,8 +436,8 @@ class LibraryContentLifecycle(
       logger.warn(e) { "scanRootFolder completed status=failed scanId=$scanId libraryId=${library.id} scanDeep=$scanDeep totalMs=$totalMs" }
       throw e
     }
-
     eventPublisher.publishEvent(DomainEvent.LibraryScanned(library))
+    return metrics
   }
 
   private inline fun <T> logScanPhase(
@@ -479,34 +480,6 @@ class LibraryContentLifecycle(
     val existingSidecars: List<SidecarStored>,
   )
 
-  private data class ScanRootFolderMetrics(
-    var scannedSeries: Int = 0,
-    var scannedBooks: Int = 0,
-    var scannedSidecars: Int = 0,
-    var existingSeries: Int = 0,
-    var existingScannedSeries: Int = 0,
-    var preloadedBooks: Int = 0,
-    var deletedSeries: Int = 0,
-    var deletedBooks: Int = 0,
-    var createdSeries: Int = 0,
-    var updatedSeries: Int = 0,
-    var addedBooks: Int = 0,
-    var deferredHashBooks: Int = 0,
-    var outdatedBooks: Int = 0,
-    var seriesRefreshQueued: Int = 0,
-    var changedSidecars: Int = 0,
-    var deletedSidecars: Int = 0,
-    var filesystemScanMs: Long = 0,
-    var clearUnavailableMs: Long = 0,
-    var loadExistingMs: Long = 0,
-    var deleteMissingSeriesMs: Long = 0,
-    var deleteMissingBooksMs: Long = 0,
-    var reconcileSeriesBooksMs: Long = 0,
-    var sortAndRefreshMs: Long = 0,
-    var reconcileSidecarsMs: Long = 0,
-    var cleanupSidecarsMs: Long = 0,
-    var cleanupMs: Long = 0,
-  )
 
   /**
    * This will try to match newSeries with a deleted series.

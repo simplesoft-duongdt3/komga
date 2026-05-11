@@ -3,6 +3,11 @@ package org.gotson.komga.application.tasks
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micrometer.core.instrument.MeterRegistry
 import org.gotson.komga.domain.model.BookAction
+import org.gotson.komga.domain.model.Library
+import org.gotson.komga.domain.model.Media
+import org.gotson.komga.domain.model.SearchCondition
+import org.gotson.komga.domain.model.SearchContext
+import org.gotson.komga.domain.model.SearchOperator
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -14,11 +19,14 @@ import org.gotson.komga.domain.service.BookPageEditor
 import org.gotson.komga.domain.service.LibraryContentLifecycle
 import org.gotson.komga.domain.service.LocalArtworkLifecycle
 import org.gotson.komga.domain.service.PageHashLifecycle
+import org.gotson.komga.domain.service.ScanRootFolderMetrics
 import org.gotson.komga.domain.service.SeriesLifecycle
 import org.gotson.komga.domain.service.SeriesMetadataLifecycle
+import org.gotson.komga.infrastructure.jooq.UnpagedSorted
 import org.gotson.komga.infrastructure.search.SearchIndexLifecycle
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_EXECUTION
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_FAILURE
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import java.nio.file.Paths
 import java.time.LocalDateTime
@@ -48,6 +56,7 @@ class TaskHandler(
   private val pageHashLifecycle: PageHashLifecycle,
   private val meterRegistry: MeterRegistry,
   private val taskExecutionRepository: TaskExecutionRepository,
+  private val libraryScanExecutionRepository: LibraryScanExecutionRepository,
 ) {
   fun handleTask(task: Task) {
     logger.info { "Executing task: $task" }
@@ -60,19 +69,54 @@ class TaskHandler(
     val bookId = task.bookId()
 
     try {
+      val scanLibraryMetrics: ScanRootFolderMetrics? // captured outside the measureTime but inside the when branch
       val duration = measureTime {
         when (task) {
-          is Task.ScanLibrary ->
+          is Task.ScanLibrary -> {
+            var scanMetricsCapture: ScanRootFolderMetrics? = null
+            var fanoutAnalyzeCount = 0
+            var fanoutRepairCount = 0
+            var fanoutHashCount = 0
+            var fanoutHashKoreaderCount = 0
+
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
-              libraryContentLifecycle.scanRootFolder(library, task.scanDeep)
+              // Phase 1: scan
+              scanMetricsCapture = libraryContentLifecycle.scanRootFolder(library, task.scanDeep)
+
+              // Phase 2: fan-out (call existing TaskEmitter methods + capture counts via separate queries)
+              fanoutAnalyzeCount = countUnknownAndOutdatedBooks(library)
               taskEmitter.analyzeUnknownAndOutdatedBooks(library)
+
+              fanoutRepairCount = countMismatchedExtensions(library)
               taskEmitter.repairExtensions(library, LOW_PRIORITY)
+
               taskEmitter.findBooksToConvert(library, LOWEST_PRIORITY)
               taskEmitter.findBooksWithMissingPageHash(library, LOWEST_PRIORITY)
               taskEmitter.findDuplicatePagesToDelete(library, LOWEST_PRIORITY)
+
+              fanoutHashCount = countBooksWithEmptyHash(library)
               taskEmitter.hashBooksWithoutHash(library)
+
+              fanoutHashKoreaderCount = countBooksWithEmptyHashKoreader(library)
               taskEmitter.hashBooksWithoutHashKoreader(library)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
+
+            // Persist scan metrics after fan-out (still inside measureTime)
+            val localScanMetrics = scanMetricsCapture
+            if (localScanMetrics != null) {
+              persistScanMetrics(
+                executionId = executionId,
+                task = task,
+                libraryId = libraryId,
+                scanMetrics = localScanMetrics,
+                analyzeBookCount = fanoutAnalyzeCount,
+                repairExtensionCount = fanoutRepairCount,
+                hashBookCount = fanoutHashCount,
+                hashBookKoreaderCount = fanoutHashKoreaderCount,
+                start = executionStart,
+              )
+            }
+          }
 
           is Task.FindBooksToConvert ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
@@ -230,6 +274,101 @@ class TaskHandler(
         success = false,
         errorMessage = e.message,
       )
+    }
+  }
+
+  /**
+   * Count queries for fan-out analytics — these are lightweight COUNT-only queries
+   * that run BEFORE the actual emitter calls (which do the full data fetch + task submission).
+   */
+  private fun countUnknownAndOutdatedBooks(library: Library): Int {
+    return bookRepository
+      .findAll(
+        SearchCondition.AllOfBook(
+          SearchCondition.LibraryId(SearchOperator.Is(library.id)),
+          SearchCondition.AnyOfBook(
+            SearchCondition.MediaStatus(SearchOperator.Is(Media.Status.UNKNOWN)),
+            SearchCondition.MediaStatus(SearchOperator.Is(Media.Status.OUTDATED)),
+          ),
+        ),
+        SearchContext.empty(),
+        UnpagedSorted(Sort.by(Sort.Order.asc("seriesId"), Sort.Order.asc("number"))),
+      ).content
+      .size
+  }
+
+  private fun countMismatchedExtensions(library: Library): Int {
+    if (!library.repairExtensions) return 0
+    return bookConverter.getMismatchedExtensionBooks(library).size
+  }
+
+  private fun countBooksWithEmptyHash(library: Library): Int {
+    if (!library.hashFiles) return 0
+    return bookRepository.findAllByLibraryIdAndWithEmptyHash(library.id).size
+  }
+
+  private fun countBooksWithEmptyHashKoreader(library: Library): Int {
+    if (!library.hashKoreader) return 0
+    return bookRepository.findAllByLibraryIdAndWithEmptyHashKoreader(library.id).size
+  }
+
+  private fun persistScanMetrics(
+    executionId: String,
+    task: Task.ScanLibrary,
+    libraryId: String?,
+    scanMetrics: ScanRootFolderMetrics,
+    analyzeBookCount: Int,
+    repairExtensionCount: Int,
+    hashBookCount: Int,
+    hashBookKoreaderCount: Int,
+    start: LocalDateTime,
+  ) {
+    try {
+      libraryScanExecutionRepository.save(
+        LibraryScanExecution(
+          id = UUID.randomUUID().toString().substring(0, 8),
+          taskExecutionId = executionId,
+          libraryId = libraryId ?: "",
+          scanDeep = task.scanDeep,
+          startDate = start,
+          endDate = LocalDateTime.now(ZoneId.of("Z")),
+          scannedSeries = scanMetrics.scannedSeries,
+          scannedBooks = scanMetrics.scannedBooks,
+          scannedSidecars = scanMetrics.scannedSidecars,
+          existingSeries = scanMetrics.existingSeries,
+          existingScannedSeries = scanMetrics.existingScannedSeries,
+          preloadedBooks = scanMetrics.preloadedBooks,
+          deletedSeries = scanMetrics.deletedSeries,
+          deletedBooks = scanMetrics.deletedBooks,
+          createdSeries = scanMetrics.createdSeries,
+          updatedSeries = scanMetrics.updatedSeries,
+          addedBooks = scanMetrics.addedBooks,
+          deferredHashBooks = scanMetrics.deferredHashBooks,
+          outdatedBooks = scanMetrics.outdatedBooks,
+          seriesRefreshQueued = scanMetrics.seriesRefreshQueued,
+          changedSidecars = scanMetrics.changedSidecars,
+          deletedSidecars = scanMetrics.deletedSidecars,
+          analyzeBookCount = analyzeBookCount,
+          hashBookCount = hashBookCount,
+          hashBookKoreaderCount = hashBookKoreaderCount,
+          repairExtensionCount = repairExtensionCount,
+          totalMs = scanMetrics.totalMs,
+          filesystemScanMs = scanMetrics.filesystemScanMs,
+          clearUnavailableMs = scanMetrics.clearUnavailableMs,
+          loadExistingMs = scanMetrics.loadExistingMs,
+          deleteMissingSeriesMs = scanMetrics.deleteMissingSeriesMs,
+          deleteMissingBooksMs = scanMetrics.deleteMissingBooksMs,
+          reconcileSeriesBooksMs = scanMetrics.reconcileSeriesBooksMs,
+          sortAndRefreshMs = scanMetrics.sortAndRefreshMs,
+          reconcileSidecarsMs = scanMetrics.reconcileSidecarsMs,
+          cleanupSidecarsMs = scanMetrics.cleanupSidecarsMs,
+          cleanupMs = scanMetrics.cleanupMs,
+          success = true,
+          errorMessage = null,
+        ),
+      )
+    } catch (e: Exception) {
+      logger.warn(e) { "Could not record library scan execution metrics" }
     }
   }
 

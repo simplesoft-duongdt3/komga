@@ -20,11 +20,13 @@ import org.gotson.komga.domain.model.AlternateTitle
 import org.gotson.komga.domain.model.Author
 import org.gotson.komga.domain.model.BookSearch
 import org.gotson.komga.domain.model.Dimension
+import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.DomainEvent
 import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.domain.model.MarkSelectedPreference
 import org.gotson.komga.domain.model.Media
 import org.gotson.komga.domain.model.MediaType.ZIP
+import org.gotson.komga.domain.model.Series
 import org.gotson.komga.domain.model.ReadStatus
 import org.gotson.komga.domain.model.SearchCondition
 import org.gotson.komga.domain.model.SearchContext
@@ -35,6 +37,7 @@ import org.gotson.komga.domain.model.SeriesSearch
 import org.gotson.komga.domain.model.ThumbnailSeries
 import org.gotson.komga.domain.model.WebLink
 import org.gotson.komga.domain.persistence.BookRepository
+import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.SeriesCollectionRepository
 import org.gotson.komga.domain.persistence.SeriesMetadataRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -59,6 +62,7 @@ import org.gotson.komga.interfaces.api.rest.dto.BookDto
 import org.gotson.komga.interfaces.api.rest.dto.CollectionDto
 import org.gotson.komga.interfaces.api.rest.dto.GroupCountDto
 import org.gotson.komga.interfaces.api.rest.dto.SeriesDto
+import org.gotson.komga.interfaces.api.rest.dto.SeriesCreationDto
 import org.gotson.komga.interfaces.api.rest.dto.SeriesMetadataUpdateDto
 import org.gotson.komga.interfaces.api.rest.dto.TachiyomiReadProgressUpdateV2Dto
 import org.gotson.komga.interfaces.api.rest.dto.TachiyomiReadProgressV2Dto
@@ -94,7 +98,10 @@ import org.springframework.web.server.ResponseStatusException
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 import java.io.OutputStream
 import java.net.URI
+import java.net.URL
 import java.nio.charset.StandardCharsets.UTF_8
+import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.zip.Deflater
@@ -119,6 +126,7 @@ class SeriesController(
   private val imageAnalyzer: ImageAnalyzer,
   private val thumbnailsSeriesRepository: ThumbnailSeriesRepository,
   private val contentRestrictionChecker: ContentRestrictionChecker,
+  private val libraryRepository: LibraryRepository,
 ) {
   @Operation(summary = "List series", description = "Use POST /api/v1/series/list instead. Deprecated since 1.19.0.", tags = [OpenApiConfiguration.TagNames.SERIES, OpenApiConfiguration.TagNames.DEPRECATED])
   @Deprecated("use /v1/series/list instead")
@@ -662,6 +670,44 @@ class SeriesController(
     taskEmitter.refreshBookMetadata(books, priority = HIGH_PRIORITY)
     taskEmitter.refreshBookLocalArtwork(books, priority = HIGH_PRIORITY)
     taskEmitter.refreshSeriesLocalArtwork(seriesId, priority = HIGH_PRIORITY)
+  }
+
+  @Operation(summary = "Create a new series with optional book registrations", tags = [OpenApiConfiguration.TagNames.SERIES])
+  @PostMapping("v1/series")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.CREATED)
+  fun createSeries(
+    @Valid @RequestBody dto: SeriesCreationDto,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ): SeriesDto {
+    val library = libraryRepository.findByIdOrNull(dto.libraryId)
+      ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Library not found: ${dto.libraryId}")
+
+    val series = Series(
+      name = dto.name,
+      url = URL(dto.url),
+      fileLastModified = dto.fileLastModified.atZone(ZoneId.of("UTC")).toLocalDateTime(),
+      libraryId = library.id,
+    )
+
+    val created = seriesLifecycle.createSeries(series)
+
+    if (dto.books.isNotEmpty()) {
+      val books = dto.books.map { b ->
+        Book(
+          name = b.name,
+          url = URL(b.url),
+          fileLastModified = b.fileLastModified.atZone(ZoneId.of("UTC")).toLocalDateTime(),
+          fileSize = b.fileSize,
+          fileHash = b.fileHash ?: "",
+          seriesId = created.id,
+          libraryId = library.id,
+        )
+      }
+      seriesLifecycle.addBooks(created, books)
+    }
+
+    return seriesDtoRepository.findByIdOrNull(created.id, principal.user.id)!!
   }
 
   @Operation(summary = "Update series metadata", tags = [OpenApiConfiguration.TagNames.SERIES])

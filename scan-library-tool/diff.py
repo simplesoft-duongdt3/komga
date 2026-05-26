@@ -1,0 +1,100 @@
+"""Diff engine — compares DB state vs filesystem state."""
+
+from dataclasses import dataclass, field
+from pathlib import PurePosixPath
+from urllib.parse import unquote, urlparse
+
+
+@dataclass
+class Diff:
+    new_series: list[dict] = field(default_factory=list)
+    deleted_series: list[dict] = field(default_factory=list)
+    new_books: list[dict] = field(default_factory=list)
+    deleted_books: list[dict] = field(default_factory=list)
+    changed_books: list[dict] = field(default_factory=list)
+
+
+def compute(series_from_db: list[dict], books_from_db: list[dict],
+            fs_data: dict) -> Diff:
+    """Compare DB state vs filesystem state."""
+
+    db_series_by_url = {s["url"]: s for s in series_from_db}
+    db_books_by_url = {b["url"]: b for b in books_from_db}
+
+    fs_series = fs_data["series"]
+    fs_books_by_url = {}
+    for s in fs_series.values():
+        for b in s["books"]:
+            fs_books_by_url[b["url"]] = b
+    for oneshot in fs_data.get("oneshots", []):
+        fs_books_by_url[oneshot["url"]] = oneshot
+
+    db_urls_s = set(db_series_by_url)
+    fs_urls_s = set(fs_series)
+    db_urls_b = set(db_books_by_url)
+    fs_urls_b = set(fs_books_by_url)
+
+    diff = Diff()
+
+    # New series (directory exists on disk but not in DB)
+    for url in fs_urls_s - db_urls_s:
+        diff.new_series.append(fs_series[url])
+
+    # Deleted series (in DB but directory not on disk)
+    for url in db_urls_s - fs_urls_s:
+        diff.deleted_series.append(db_series_by_url[url])
+
+    # New books (book exists on disk but not in DB), excluding books
+    # that belong to new series (handled together with series creation)
+    new_series_urls = {s["url"] for s in diff.new_series}
+    for url in fs_urls_b - db_urls_b:
+        parent = _get_parent_series_url(url, fs_series)
+        if parent in new_series_urls:
+            continue
+        diff.new_books.append(fs_books_by_url[url])
+
+    # Deleted books (in DB but file not on disk)
+    for url in db_urls_b - fs_urls_b:
+        diff.deleted_books.append(db_books_by_url[url])
+
+    # Changed books (same URL, different mtime or size)
+    for url in db_urls_b & fs_urls_b:
+        fs_b = fs_books_by_url[url]
+        db_b = db_books_by_url[url]
+        if (fs_b["file_last_modified"] != db_b["file_last_modified"] or
+                fs_b["file_size"] != db_b["file_size"]):
+            diff.changed_books.append(dict(
+                id=db_b["id"],
+                name=db_b["name"],
+                series_id=db_b.get("series_id"),
+                url=url,
+            ))
+
+    return diff
+
+
+def group_new_books_by_series(
+    books: list[dict], fs_series: dict,
+    db_series_by_url: dict,
+) -> dict[str, list[dict]]:
+    """Map new books to their parent series ID by matching the series URL."""
+    result: dict[str, list[dict]] = {}
+    for b in books:
+        parent_url = _get_parent_series_url(b["url"], fs_series)
+        if parent_url and parent_url in db_series_by_url:
+            sid = db_series_by_url[parent_url]["id"]
+            result.setdefault(sid, []).append(b)
+    return result
+
+
+def _get_parent_series_url(book_url: str, fs_series: dict) -> str | None:
+    """Find which series directory contains this book URL."""
+    book_path = PurePosixPath(unquote(urlparse(book_url).path))
+    for series_url in fs_series:
+        series_path = PurePosixPath(unquote(urlparse(series_url).path))
+        try:
+            book_path.relative_to(series_path)
+            return series_url
+        except ValueError:
+            continue
+    return None

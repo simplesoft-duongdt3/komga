@@ -58,3 +58,5 @@ application-oauth2.yml
 ### Conveyor
 output/
 secret/
+/scan-library-tool/__pycache__
+/scan-library-tool/tests/__pycache__

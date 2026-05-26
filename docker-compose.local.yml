@@ -46,6 +46,34 @@ services:
       - ./data:/data:ro
     restart: unless-stopped
 
+  smart-scanner:
+    build:
+      context: ./scan-library-tool
+      dockerfile: Dockerfile
+    container_name: komga-smart-scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      komga:
+        condition: service_started
+    ports:
+      - "5050:5050"
+    environment:
+      KOMGA_BASE_URL: http://komga:25600
+      KOMGA_USER: admin@example.com
+      KOMGA_PASSWORD: ""
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: komga
+      PG_USER: komga
+      PG_PASSWORD: komga123
+      DRY_RUN: "false"
+      PORT: "5050"
+    volumes:
+      - ./data:/data:ro
+    profiles:
+      - scanner
+
 volumes:
   postgres_data:
   komga_config:

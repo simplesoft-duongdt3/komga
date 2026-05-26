@@ -45,9 +45,16 @@ def _delete(path: str):
 
 
 def list_libraries() -> list[dict]:
-    return _get_session().get(
+    resp = _get_session().get(
         urljoin(KOMGA_URL, "/api/v1/libraries")
-    ).json()
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if isinstance(data, dict):
+        data = data.get("content", list(data.values()))
+    if not isinstance(data, list):
+        raise ValueError(f"Unexpected library response: {type(data)}")
+    return data
 
 
 def create_series(library_id: str, name: str, url: str,

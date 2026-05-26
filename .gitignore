@@ -60,4 +60,5 @@ output/
 secret/
 /scan-library-tool/__pycache__
 /scan-library-tool/tests/__pycache__
+/exports/
 /frontend-dist

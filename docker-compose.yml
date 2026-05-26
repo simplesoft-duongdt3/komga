@@ -69,8 +69,8 @@ services:
       - "5050:5050"
     environment:
       KOMGA_BASE_URL: http://komga:25600
-      KOMGA_USER: admin@example.com
-      KOMGA_PASSWORD: ""
+      KOMGA_USER: admin@gmail.com
+      KOMGA_PASSWORD: "123456a@A"
       PG_HOST: postgres
       PG_PORT: "5432"
       PG_DB: komga
@@ -80,6 +80,7 @@ services:
       PORT: "5050"
     volumes:
       - /Users/duong/Documents/data-komga:/data:ro
+      - ./exports:/exports
 
 volumes:
   postgres_data:

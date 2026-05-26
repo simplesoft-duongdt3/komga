@@ -10,6 +10,7 @@ import api
 import db as database
 import walker
 import diff as differ
+import export_json
 
 
 # ── Shared helpers ──────────────────────────────────────────
@@ -73,6 +74,45 @@ def scan_library(
     result = _run_diff(library_id, library_root)
     d = result["diff"]
 
+    # ── Read raw data for export + debug ──────────────────
+
+    db_series = database.read_series(library_id)
+    db_books = database.read_books(library_id)
+    fs = walker.walk_library(library_root)
+
+    # ── Export JSON snapshots ────────────────────────────
+
+    j1_path, j2_path = export_json.export_snapshots(
+        library_id, library_name, library_root,
+        db_series, db_books, fs,
+    )
+
+    # ── Build debug section (URL comparison) ──────────────
+
+    db_series_urls = sorted([s["url"] for s in db_series])
+    fs_series_urls = sorted(fs["series"].keys())
+    db_book_urls = sorted([b["url"] for b in db_books])
+    fs_book_urls = sorted(
+        b["url"] for s in fs["series"].values() for b in s["books"]
+    ) + sorted(b["url"] for b in fs.get("oneshots", []))
+
+    debug = (
+        f"### Debug — URL Comparison\n\n"
+        f"**Library root:** `{library_root}`\n\n"
+        f"**DB series ({len(db_series_urls)}):**\n```\n" +
+        "\n".join(db_series_urls) +
+        f"\n```\n\n"
+        f"**FS series ({len(fs_series_urls)}):**\n```\n" +
+        "\n".join(fs_series_urls) +
+        f"\n```\n\n"
+        f"**DB books ({len(db_book_urls)}):**\n```\n" +
+        "\n".join(db_book_urls) +
+        f"\n```\n\n"
+        f"**FS books ({len(fs_book_urls)}):**\n```\n" +
+        "\n".join(fs_book_urls) +
+        f"\n```"
+    )
+
     # ── Build output tables ───────────────────────────────
 
     new_series_rows = [
@@ -113,6 +153,7 @@ def scan_library(
         f"Library: **{library_name}**\n\n"
         f"DB state: {result['db_series']} series, {result['db_books']} books\n"
         f"Filesystem: {result['fs_series']} series, {result['fs_books']} PDF files\n\n"
+        f"📁 Exported: `{j1_path}` and `{j2_path}`\n\n"
         f"### Changes\n"
         f"| Category | Count |\n|----------|------|\n"
         f"| ✨ New series | {len(d.new_series)} |\n"
@@ -136,7 +177,7 @@ def scan_library(
         "apply_total": str(total_actions),
     }]
 
-    outputs = [totals]
+    outputs = [totals, debug]
 
     if new_series_rows:
         outputs.append(new_series_rows)

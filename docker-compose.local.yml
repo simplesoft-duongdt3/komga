@@ -71,6 +71,7 @@ services:
       PORT: "5050"
     volumes:
       - /Users/duong/Documents/data-komga:/data:ro
+      - ./exports:/exports
 
 volumes:
   postgres_data:

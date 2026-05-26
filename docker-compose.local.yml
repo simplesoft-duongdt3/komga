@@ -43,7 +43,7 @@ services:
       - "25600:25600"
     volumes:
       - komga_config:/config
-      - ./data:/data:ro
+      - /Users/duong/Documents/data-komga:/data:ro
     restart: unless-stopped
 
   smart-scanner:
@@ -70,9 +70,7 @@ services:
       DRY_RUN: "false"
       PORT: "5050"
     volumes:
-      - ./data:/data:ro
-    profiles:
-      - scanner
+      - /Users/duong/Documents/data-komga:/data:ro
 
 volumes:
   postgres_data:

@@ -20,7 +20,7 @@ services:
       retries: 5
 
   komga:
-    image: komga:latest
+    image: komga-local:latest
     container_name: komga-backend
     depends_on:
       postgres:
@@ -52,26 +52,34 @@ services:
       - "25600:25600"
     volumes:
       - komga_config:/config
-      - ./data:/data:ro
+      - /Users/duong/Documents/data-komga:/data:ro
     restart: unless-stopped
 
-  scanner:
-    build: ./tool-scan-library
-    image: komga-scanner:latest
-    container_name: komga-scanner
+  smart-scanner:
+    build:
+      context: ./scan-library-tool
+      dockerfile: Dockerfile
+    container_name: komga-smart-scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      komga:
+        condition: service_started
+    ports:
+      - "5050:5050"
     environment:
-      KOMGA_DB_HOST: postgres
-      KOMGA_DB_PORT: 5432
-      KOMGA_DB_NAME: komga
-      KOMGA_DB_USER: komga
-      KOMGA_DB_PASS: komga123
-      KOMGA_DB_WRITE_USER: komga
-      KOMGA_DB_WRITE_PASS: komga123
-      KOMGA_LIBRARY_ROOT: /data/data-books-audiobooks/Manga_Ebook/Manhwa
-      KOMGA_LIBRARY_ID: 0Q3CKC76902B7
-      KOMGA_SCAN_WORKERS: 4
+      KOMGA_BASE_URL: http://komga:25600
+      KOMGA_USER: admin@example.com
+      KOMGA_PASSWORD: ""
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: komga
+      PG_USER: komga
+      PG_PASSWORD: komga123
+      DRY_RUN: "false"
+      PORT: "5050"
     volumes:
-      - ./data:/data:ro
+      - /Users/duong/Documents/data-komga:/data:ro
 
 volumes:
   postgres_data:

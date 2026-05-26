@@ -117,3 +117,35 @@ class TestWalker(unittest.TestCase):
             self.assertIn("file_last_modified", b)
             self.assertIn("+00:00", b["file_last_modified"])
 
+    def test_hash_files_enabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            series_a = root / "Series A"
+            series_a.mkdir()
+            self._make_file(series_a, "Chapter 01.pdf", "hello pdf")
+
+            result = walk_library(str(root), hash_files=True)
+
+            books = list(result["series"].values())[0]["books"]
+            b = books[0]
+            self.assertIn("file_hash", b)
+            # SHA-256 of "hello pdf"
+            self.assertEqual(len(b["file_hash"]), 64)
+            self.assertEqual(
+                b["file_hash"],
+                "9f275d73a74baf528734b92128a320df66ae66dab4935c842d8c3879d498e3f4",
+            )
+
+    def test_hash_files_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            series_a = root / "Series A"
+            series_a.mkdir()
+            self._make_file(series_a, "Chapter 01.pdf", "hello")
+
+            result = walk_library(str(root), hash_files=False)
+
+            books = list(result["series"].values())[0]["books"]
+            b = books[0]
+            self.assertNotIn("file_hash", b)
+

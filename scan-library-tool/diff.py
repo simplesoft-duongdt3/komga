@@ -1,8 +1,25 @@
 """Diff engine — compares DB state vs filesystem state."""
 
+import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from urllib.parse import unquote, urlparse
+
+
+def _normalize_file_url(url: str) -> str:
+    """Normalize file:// URLs for consistent comparison.
+
+    Java URL.toString() may produce 'file:/path' (JDK 21+).
+    Python Path.as_uri() produces 'file:///path'.
+    Java Path.toUri() adds trailing slash for directories.
+
+    Canonical form: 'file:///absolute/path' (no trailing slash).
+    """
+    if "file:" not in url:
+        return url
+    # strip scheme (file:, file://, file:///) and trailing slashes
+    path = re.sub(r"^file:(//?)?", "", url).strip("/")
+    return f"file:///{path}"
 
 
 @dataclass
@@ -18,19 +35,24 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
             fs_data: dict) -> Diff:
     """Compare DB state vs filesystem state."""
 
-    db_series_by_url = {s["url"]: s for s in series_from_db}
-    db_books_by_url = {b["url"]: b for b in books_from_db}
+    # Normalize URLs for consistent key matching across Java (DB) and Python (FS)
+    db_series_by_url = {_normalize_file_url(s["url"]): s for s in series_from_db}
+    db_books_by_url = {_normalize_file_url(b["url"]): b for b in books_from_db}
 
     fs_series = fs_data["series"]
+    fs_series_normalized = {}  # normalized url → original data
+    for url, s in fs_series.items():
+        fs_series_normalized[_normalize_file_url(url)] = s
+
     fs_books_by_url = {}
     for s in fs_series.values():
         for b in s["books"]:
-            fs_books_by_url[b["url"]] = b
+            fs_books_by_url[_normalize_file_url(b["url"])] = b
     for oneshot in fs_data.get("oneshots", []):
-        fs_books_by_url[oneshot["url"]] = oneshot
+        fs_books_by_url[_normalize_file_url(oneshot["url"])] = oneshot
 
     db_urls_s = set(db_series_by_url)
-    fs_urls_s = set(fs_series)
+    fs_urls_s = set(fs_series_normalized)
     db_urls_b = set(db_books_by_url)
     fs_urls_b = set(fs_books_by_url)
 
@@ -38,7 +60,7 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
 
     # New series (directory exists on disk but not in DB)
     for url in fs_urls_s - db_urls_s:
-        diff.new_series.append(fs_series[url])
+        diff.new_series.append(fs_series_normalized[url])
 
     # Deleted series (in DB but directory not on disk)
     for url in db_urls_s - fs_urls_s:
@@ -46,9 +68,9 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
 
     # New books (book exists on disk but not in DB), excluding books
     # that belong to new series (handled together with series creation)
-    new_series_urls = {s["url"] for s in diff.new_series}
+    new_series_urls = {_normalize_file_url(s["url"]) for s in diff.new_series}
     for url in fs_urls_b - db_urls_b:
-        parent = _get_parent_series_url(url, fs_series)
+        parent = _get_parent_series_url(url, fs_series_normalized)
         if parent in new_series_urls:
             continue
         diff.new_books.append(fs_books_by_url[url])
@@ -57,12 +79,24 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
     for url in db_urls_b - fs_urls_b:
         diff.deleted_books.append(db_books_by_url[url])
 
-    # Changed books (same URL, different mtime or size)
+    # Changed books (same URL, different content)
+    # Prefer hash when both sides have it; fall back to mtime/size
     for url in db_urls_b & fs_urls_b:
         fs_b = fs_books_by_url[url]
         db_b = db_books_by_url[url]
-        if (fs_b["file_last_modified"] != db_b["file_last_modified"] or
-                fs_b["file_size"] != db_b["file_size"]):
+
+        changed = False
+
+        fs_hash = fs_b.get("file_hash", "")
+        db_hash = db_b.get("file_hash", "")
+
+        if fs_hash and db_hash:
+            changed = fs_hash != db_hash
+        else:
+            changed = (fs_b["file_last_modified"] != db_b.get("file_last_modified") or
+                       fs_b["file_size"] != db_b.get("file_size"))
+
+        if changed:
             diff.changed_books.append(dict(
                 id=db_b["id"],
                 name=db_b["name"],
@@ -79,10 +113,12 @@ def group_new_books_by_series(
 ) -> dict[str, list[dict]]:
     """Map new books to their parent series ID by matching the series URL."""
     result: dict[str, list[dict]] = {}
+    fs_series_norm = {_normalize_file_url(u): o for u, o in fs_series.items()}
+    db_series_norm = {_normalize_file_url(u): d for u, d in db_series_by_url.items()}
     for b in books:
-        parent_url = _get_parent_series_url(b["url"], fs_series)
-        if parent_url and parent_url in db_series_by_url:
-            sid = db_series_by_url[parent_url]["id"]
+        parent_url = _get_parent_series_url(b["url"], fs_series_norm)
+        if parent_url and parent_url in db_series_norm:
+            sid = db_series_norm[parent_url]["id"]
             result.setdefault(sid, []).append(b)
     return result
 

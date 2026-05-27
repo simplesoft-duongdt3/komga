@@ -327,6 +327,8 @@ async def gen_curl(req: CurlRequest):
         deleted_books=raw.get("deleted_books", []),
         changed_books=raw.get("changed_books", []),
         pending_hash=raw.get("pending_hash", []),
+        to_be_analyzed=raw.get("to_be_analyzed", []),
+        no_metadata=raw.get("no_metadata", []),
     )
 
     lib_id = diff_data.get("library", {}).get("id", "")

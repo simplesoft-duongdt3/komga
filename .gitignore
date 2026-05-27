@@ -63,3 +63,4 @@ secret/
 /exports/
 /frontend-dist
 /scan-library-tool/pdf-hasher/target
+.DS_Store

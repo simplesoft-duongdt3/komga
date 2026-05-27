@@ -33,6 +33,7 @@ import org.gotson.komga.domain.persistence.ReadListRepository
 import org.gotson.komga.domain.persistence.ThumbnailBookRepository
 import org.gotson.komga.domain.service.BookAnalyzer
 import org.gotson.komga.domain.service.BookLifecycle
+import org.gotson.komga.infrastructure.hash.Hasher
 import org.gotson.komga.infrastructure.image.ImageAnalyzer
 import org.gotson.komga.infrastructure.jooq.UnpagedSorted
 import org.gotson.komga.infrastructure.mediacontainer.ContentDetector
@@ -59,6 +60,7 @@ import org.gotson.komga.interfaces.api.rest.dto.R2Positions
 import org.gotson.komga.interfaces.api.rest.dto.ReadListDto
 import org.gotson.komga.interfaces.api.rest.dto.ReadProgressUpdateDto
 import org.gotson.komga.interfaces.api.rest.dto.ThumbnailBookDto
+import org.gotson.komga.interfaces.api.rest.dto.UpdateBookHashDto
 import org.gotson.komga.interfaces.api.rest.dto.patch
 import org.gotson.komga.interfaces.api.rest.dto.restrictUrl
 import org.gotson.komga.interfaces.api.rest.dto.toDto
@@ -115,6 +117,7 @@ class BookController(
   private val webPubGenerator: WebPubGenerator,
   private val contentRestrictionChecker: ContentRestrictionChecker,
   private val commonBookController: CommonBookController,
+  private val hasher: Hasher,
 ) {
   @Deprecated("use /v1/books/list instead")
   @PageableAsQueryParam
@@ -624,6 +627,28 @@ class BookController(
     bookRepository.findByIdOrNull(bookId)?.let { book ->
       taskEmitter.analyzeBook(book, HIGH_PRIORITY)
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
+  }
+
+  @Operation(summary = "Update the file hash for a book", tags = [OpenApiConfiguration.TagNames.BOOKS])
+  @PutMapping("api/v1/books/{bookId}/hash")
+  @PreAuthorize("hasRole('ADMIN')")
+  fun updateBookHash(
+    @PathVariable bookId: String,
+    @Valid @RequestBody dto: UpdateBookHashDto,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ): BookDto {
+    val book = bookRepository.findByIdOrNull(bookId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Book not found")
+
+    val hash = if (dto.fileHash.isNullOrBlank()) {
+      hasher.computeHash(book.path)
+    } else {
+      dto.fileHash
+    }
+
+    bookRepository.update(book.copy(fileHash = hash))
+
+    return bookDtoRepository.findByIdOrNull(bookId, principal.user.id)!!
   }
 
   @Operation(summary = "Refresh book metadata", tags = [OpenApiConfiguration.TagNames.BOOKS])

@@ -251,15 +251,22 @@ def _bld_changed_books(diff: Diff, analyze: bool, refresh: bool) -> list[str]:
 
 
 def _bld_pending_hash(diff: Diff) -> list[str]:
-    """Generate analyze commands for books missing DB hash.
+    """Generate commands to update file hash for books missing DB hash.
 
-    POST /api/v1/books/{id}/analyze triggers Komga's analyzer to
-    compute and store the XXH3_128 hash in the DB.
+    Uses PUT /api/v1/books/{id}/hash (synchronous, direct hash update).
+    The hash was already computed by the scanner's walker — pass it directly.
     """
     lines = []
     for b in diff.pending_hash:
-        lines.append(f"# Hash book: {b['name']}")
-        lines.append(_curl_cmd("POST", f"/api/v1/books/{b['id']}/analyze"))
+        fh = b.get("file_hash", "")
+        if fh:
+            lines.append(f"# Hash book: {b['name']} (pre-computed)")
+            lines.append(_curl_cmd("PUT", f"/api/v1/books/{b['id']}/hash", {
+                "fileHash": fh,
+            }))
+        else:
+            lines.append(f"# Hash book: {b['name']}")
+            lines.append(_curl_cmd("PUT", f"/api/v1/books/{b['id']}/hash"))
     return lines
 
 

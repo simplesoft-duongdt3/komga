@@ -120,6 +120,7 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
                 name=db_b["name"],
                 series_id=db_b.get("series_id"),
                 url=url,
+                file_hash=fs_hash,
             ))
         else:
             changed = (_mtime_equals(fs_b["file_last_modified"], db_b.get("file_last_modified")) is False or

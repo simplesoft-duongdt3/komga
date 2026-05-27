@@ -105,7 +105,7 @@ def walk_library(root: str, *, exclusions: set[str] | None = None,
             for future in as_completed(futures):
                 completed += 1
                 if on_progress:
-                    on_progress(completed, len(dirs))
+                    on_progress(completed, len(dirs), futures[future].name)
                 series_url, series_data = future.result()
                 if series_data:
                     series[series_url] = series_data

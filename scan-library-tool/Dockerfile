@@ -10,11 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-ARG CACHEBUST=0
-ARG VERSION=dev
-COPY config.py db.py walker.py diff.py api.py applier.py main.py server.py export_json.py perf.py ./
+COPY config.py db.py walker.py diff.py api.py applier.py main.py server.py export_json.py perf.py VERSION ./
 COPY static/ ./static/
-RUN echo -n "$VERSION" > /app/version.txt
 
 EXPOSE 5050
 CMD ["python", "server.py"]

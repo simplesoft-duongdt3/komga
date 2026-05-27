@@ -258,7 +258,7 @@ class TestThreadedWalker(unittest.TestCase):
                 self._make_series(root, f"S{i}", [f"ch{i}.pdf"])
 
             calls = []
-            def progress(c, t):
+            def progress(c, t, _name=""):
                 calls.append((c, t))
 
             walk_library(str(root), max_workers=2, on_progress=progress)

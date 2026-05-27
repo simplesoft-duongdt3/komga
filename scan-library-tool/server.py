@@ -20,7 +20,7 @@ from perf import ScanTimer
 
 app = FastAPI(title="Komga Smart Scanner")
 
-VERSION_FILE = os.path.join(os.path.dirname(__file__), "version.txt")
+VERSION_FILE = os.path.join(os.path.dirname(__file__), "VERSION")
 
 
 def _read_version() -> str:
@@ -108,27 +108,48 @@ async def run_scan(req: ScanRequest):
     request_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
     timer = ScanTimer(request_id, EXPORT_DIR)
 
+    print(f"[scan] {request_id} — Starting scan for library '{lib['name']}' (id={req.library_id})")
+
     # 1. DB snapshot
+    print(f"[scan] {request_id} — Phase: reading DB series...")
     timer.begin("db_series")
     db_series = database.read_series(req.library_id)
     timer.end()
+    print(f"[scan] {request_id} — DB series: {len(db_series)} rows in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_series')}ms")
 
+    print(f"[scan] {request_id} — Phase: reading DB books...")
     timer.begin("db_books")
     db_books = database.read_books(req.library_id)
     timer.end()
+    print(f"[scan] {request_id} — DB books: {len(db_books)} rows in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_books')}ms")
 
     # 2. FS walk (with optional hashing)
+    print(f"[scan] {request_id} — Phase: walking filesystem (threads={SCAN_THREADS or 'auto'}, hash={req.hash_files})...")
     timer.begin("fs_walk", {"hash_files": req.hash_files})
+
+    fs_walked = [0]
+    def _progress(current, total, dir_name=""):
+        fs_walked[0] = current
+        print(f"[scan] {request_id} — FS walk: [{current}/{total}] {dir_name}")
+
     fs_data = walker.walk_library(root, hash_files=req.hash_files,
-                                   max_workers=SCAN_THREADS or None)
+                                   max_workers=SCAN_THREADS or None,
+                                   on_progress=_progress)
     timer.end()
+    p = next(p for p in timer.phases if p['phase']=='fs_walk')
+    print(f"[scan] {request_id} — FS walk: {len(fs_data['series'])} series, {sum(len(s['books']) for s in fs_data['series'].values())} files in {p['elapsed_ms']}ms")
 
     # 3. Diff
+    print(f"[scan] {request_id} — Phase: computing diff...")
     timer.begin("diff")
     d = differ.compute(db_series, db_books, fs_data)
     timer.end()
+    print(f"[scan] {request_id} — Diff: {len(d.new_series)} new series, {len(d.deleted_series)} del series, "
+          f"{len(d.new_books)} new books, {len(d.deleted_books)} del books, "
+          f"{len(d.changed_books)} changed, {len(d.pending_hash)} pending hash")
 
     # 4. Export JSONs to request_id folder
+    print(f"[scan] {request_id} — Phase: exporting JSONs...")
     timer.begin("export_jsons")
     paths = export_json.export_snapshots(
         req.library_id, lib["name"], root,

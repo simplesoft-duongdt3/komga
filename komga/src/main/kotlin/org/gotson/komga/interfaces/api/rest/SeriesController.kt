@@ -62,6 +62,7 @@ import org.gotson.komga.interfaces.api.rest.dto.BookDto
 import org.gotson.komga.interfaces.api.rest.dto.CollectionDto
 import org.gotson.komga.interfaces.api.rest.dto.GroupCountDto
 import org.gotson.komga.interfaces.api.rest.dto.SeriesDto
+import org.gotson.komga.interfaces.api.rest.dto.AddBooksToSeriesDto
 import org.gotson.komga.interfaces.api.rest.dto.SeriesCreationDto
 import org.gotson.komga.interfaces.api.rest.dto.SeriesMetadataUpdateDto
 import org.gotson.komga.interfaces.api.rest.dto.TachiyomiReadProgressUpdateV2Dto
@@ -708,6 +709,42 @@ class SeriesController(
     }
 
     return seriesDtoRepository.findByIdOrNull(created.id, principal.user.id)!!
+  }
+
+  @Operation(summary = "Register new books into an existing series", tags = [OpenApiConfiguration.TagNames.SERIES])
+  @PostMapping("v1/series/{seriesId}/books")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.CREATED)
+  fun addBooksToSeries(
+    @PathVariable seriesId: String,
+    @Valid @RequestBody dto: AddBooksToSeriesDto,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ): SeriesDto {
+    val series = seriesRepository.findByIdOrNull(seriesId)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Series not found")
+
+    val library = libraryRepository.findByIdOrNull(dto.libraryId)
+      ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Library not found: ${dto.libraryId}")
+
+    require(series.libraryId == library.id) {
+      "Series does not belong to the given library"
+    }
+
+    val books = dto.books.map { b ->
+      Book(
+        name = b.name,
+        url = URL(b.url),
+        fileLastModified = b.fileLastModified.atZone(ZoneId.of("UTC")).toLocalDateTime(),
+        fileSize = b.fileSize,
+        fileHash = b.fileHash ?: "",
+        seriesId = series.id,
+        libraryId = library.id,
+      )
+    }
+
+    seriesLifecycle.addBooks(series, books)
+
+    return seriesDtoRepository.findByIdOrNull(seriesId, principal.user.id)!!
   }
 
   @Operation(summary = "Update series metadata", tags = [OpenApiConfiguration.TagNames.SERIES])

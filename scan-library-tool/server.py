@@ -234,11 +234,15 @@ async def gen_curl(req: CurlRequest):
     )
 
     lib_id = diff_data.get("library", {}).get("id", "")
+    db_series_by_url = diff_data.get("_raw_db_series_by_url", {})
+    fs_data = diff_data.get("_raw_fs_data", {"series": {}, "oneshots": []})
 
     scripts = generate_curl_scripts(
         d, lib_id, req.categories,
         req.analyze, req.refresh,
         folder, req.request_id,
+        db_series_by_url=db_series_by_url,
+        fs_data=fs_data,
     )
 
     return {"scripts": scripts}

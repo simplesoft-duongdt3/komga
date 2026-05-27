@@ -94,6 +94,8 @@ def generate_curl_scripts(
     diff: Diff, library_id: str, categories: list[str],
     analyze: bool, refresh: bool, output_dir: str,
     request_id: str,
+    db_series_by_url: dict | None = None,
+    fs_data: dict | None = None,
 ) -> dict[str, str]:
     """Generate one bash script per selected category.
 
@@ -106,6 +108,7 @@ def generate_curl_scripts(
     builders = {
         "new_series": _bld_new_series(diff, library_id, analyze, refresh),
         "deleted_series": _bld_deleted_series(diff, library_id),
+        "new_books": _bld_new_books(diff, library_id, db_series_by_url, fs_data),
         "deleted_books": _bld_deleted_books(diff, library_id),
         "changed_books": _bld_changed_books(diff, analyze, refresh),
         "pending_hash": _bld_pending_hash(diff),
@@ -169,6 +172,45 @@ def _bld_new_series(diff: Diff, library_id: str, analyze: bool, refresh: bool) -
         }))
         if analyze:
             lines.append(f"# Note: analyze books in new series via GET /api/v1/series/<ID>/books")
+    return lines
+
+
+def _bld_new_books(diff: Diff, library_id: str,
+                   db_series_by_url: dict | None,
+                   fs_data: dict | None) -> list[str]:
+    """Generate curl commands to add new books to existing series.
+
+    Uses POST /api/v1/series/{seriesId}/books (the new Komga endpoint).
+    """
+    if not diff.new_books:
+        return []
+
+    lines = [f"# New books in existing series ({len(diff.new_books)} total)"]
+
+    if db_series_by_url and fs_data:
+        from diff import group_new_books_by_series
+        by_series = group_new_books_by_series(
+            diff.new_books, fs_data.get("series", {}), db_series_by_url,
+        )
+        for series_id, books in by_series.items():
+            lines.append(f"#  → series {series_id} ({len(books)} books)")
+            lines.append(_curl_cmd("POST", f"/api/v1/series/{series_id}/books", {
+                "libraryId": library_id,
+                "books": [
+                    {
+                        "name": b["name"],
+                        "url": b["url"],
+                        "fileSize": b["file_size"],
+                        "fileLastModified": b["file_last_modified"],
+                    }
+                    for b in books
+                ],
+            }))
+    else:
+        # Fallback: no series mapping data — trigger library scan
+        lines.append("# No series mapping available — triggering library scan")
+        lines.append(_curl_cmd("POST", f"/api/v1/libraries/{library_id}/scan?deep=false"))
+
     return lines
 
 

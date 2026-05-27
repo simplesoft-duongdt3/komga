@@ -181,6 +181,18 @@ function renderScanResults() {
 
   const hasChanges = d.new_series + d.deleted_series + d.new_books + d.deleted_books + d.changed_books + d.pending_hash > 0;
 
+  // Build timing table
+  const perf = r.perf || {};
+  const phases = perf.phases || [];
+  const totalMs = perf.total_ms || 0;
+  const timingRows = phases.map(p => {
+    const ms = p.elapsed_ms;
+    const pct = totalMs > 0 ? (ms / totalMs * 100) : 0;
+    const icon = pct > 50 ? ' 🐌' : '';
+    const cls = pct > 50 ? 'text-red-400' : (pct > 20 ? 'text-yellow-400' : '');
+    return `<tr class="${cls}"><td class="py-1 text-xs">${esc(p.phase)}</td><td class="py-1 text-right text-xs">${timeFmt(ms)}</td><td class="py-1 text-right text-xs">${pct.toFixed(0)}%${icon}</td></tr>`;
+  }).join('');
+
   out.innerHTML = `
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mt-2">
       <div class="text-sm mb-2"><span class="text-gray-400">Request ID:</span> <code class="bg-gray-100 dark:bg-gray-700 px-1 rounded">${esc(r.request_id)}</code></div>
@@ -206,11 +218,25 @@ function renderScanResults() {
           <td class="py-1">Total</td><td class="text-right py-1">${r.total_actions}</td>
         </tr></tfoot>
       </table>
+      ${timingRows ? `
+      <details class="mb-2">
+        <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-200">⏱ Scan Timing (${timeFmt(totalMs)} total)</summary>
+        <table class="w-full text-xs mt-1">
+          <thead><tr class="border-b border-gray-200 dark:border-gray-700">
+            <th class="text-left py-1">Phase</th><th class="text-right py-1">Time</th><th class="text-right py-1">%</th>
+          </tr></thead>
+          <tbody>${timingRows}</tbody>
+          <tfoot><tr class="border-t border-gray-300 dark:border-gray-600 font-semibold">
+            <td class="py-1">Total</td><td class="text-right py-1">${timeFmt(totalMs)}</td><td class="text-right py-1">100%</td>
+          </tr></tfoot>
+        </table>
+      </details>` : ''}
       <div class="flex flex-wrap gap-2 items-center text-sm">
         <span class="text-gray-400">📁 Download:</span>
         <a href="${apiUrl(r.request_id + '/' + r.request_id + '_db.json')}" target="_blank" class="text-blue-500 hover:underline">DB JSON</a>
         <a href="${apiUrl(r.request_id + '/' + r.request_id + '_fs.json')}" target="_blank" class="text-blue-500 hover:underline">FS JSON</a>
         <a href="${apiUrl(r.request_id + '/' + r.request_id + '_diff.json')}" target="_blank" class="text-blue-500 hover:underline">Diff JSON</a>
+        <a href="${apiUrl(r.request_id + '/' + r.request_id + '_perf.json')}" target="_blank" class="text-blue-500 hover:underline">Perf JSON</a>
       </div>
       <div class="mt-4">${btn('→ Generate Curls', 'state.step=3;render()', hasChanges ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-400 text-white cursor-not-allowed')}</div>
     </div>
@@ -218,6 +244,14 @@ function renderScanResults() {
   function row(label, count, cls) {
     return `<tr><td class="py-1">${label}</td><td class="text-right py-1 ${cls}">${count}</td></tr>`;
   }
+}
+
+/* ── Time formatting helper ─────────────────────────── */
+
+function timeFmt(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
 }
 
 /* ── Step 3: Generate Curls ────────────────────────────── */

@@ -204,3 +204,81 @@ class TestWalker(unittest.TestCase):
             self.assertEqual(len(result["oneshots"]), 1)
             self.assertEqual(len(result["oneshots"][0]["file_hash"]), 32)
 
+
+class TestThreadedWalker(unittest.TestCase):
+    """Tests for ThreadPoolExecutor parallel directory walk."""
+
+    def _make_series(self, root: Path, name: str, files: list[str]):
+        d = root / name
+        d.mkdir()
+        for fname in files:
+            (d / fname).write_text(f"content-{name}-{fname}")
+
+    def test_threaded_equals_single(self):
+        """Threaded walk with max_workers=2 produces same result as single-threaded."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            self._make_series(root, "Series A", ["ch01.pdf", "ch02.pdf"])
+            self._make_series(root, "Series B", ["ch01.pdf"])
+
+            single = walk_library(str(root), max_workers=1)
+            threaded = walk_library(str(root), max_workers=2)
+
+            self.assertEqual(single["series"].keys(), threaded["series"].keys())
+            for url in single["series"]:
+                self.assertEqual(
+                    [b["name"] for b in single["series"][url]["books"]],
+                    [b["name"] for b in threaded["series"][url]["books"]],
+                )
+
+    def test_threaded_max_workers_1(self):
+        """max_workers=1 works and produces results."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            self._make_series(root, "S", ["a.pdf"])
+            result = walk_library(str(root), max_workers=1)
+            self.assertEqual(len(result["series"]), 1)
+            self.assertEqual(result["series"][list(result["series"].keys())[0]]["name"], "S")
+
+    def test_threaded_finds_all_series(self):
+        """Threaded walk finds all directories with PDFs."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for i in range(5):
+                self._make_series(root, f"Series-{i}", [f"ch{i}.pdf"])
+
+            result = walk_library(str(root), max_workers=3)
+            self.assertEqual(len(result["series"]), 5)
+
+    def test_threaded_on_progress_called(self):
+        """on_progress callback is invoked for each directory."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            for i in range(3):
+                self._make_series(root, f"S{i}", [f"ch{i}.pdf"])
+
+            calls = []
+            def progress(c, t):
+                calls.append((c, t))
+
+            walk_library(str(root), max_workers=2, on_progress=progress)
+            self.assertEqual(len(calls), 3)
+            self.assertEqual(calls[-1], (3, 3))
+
+    def test_threaded_empty_library(self):
+        """Empty library with no dirs returns empty result."""
+        with tempfile.TemporaryDirectory() as tmp:
+            result = walk_library(str(tmp), max_workers=2)
+            self.assertEqual(result, {"series": {}, "oneshots": []})
+
+    def test_threaded_with_oneshots(self):
+        """Oneshots are still found alongside threaded series."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            self._make_series(root, "Series A", ["ch01.pdf"])
+            (root / "oneshot.pdf").write_text("oneshot")
+
+            result = walk_library(str(root), max_workers=2)
+            self.assertEqual(len(result["series"]), 1)
+            self.assertEqual(len(result["oneshots"]), 1)
+

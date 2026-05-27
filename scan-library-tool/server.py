@@ -15,7 +15,8 @@ import walker
 import diff as differ
 import export_json
 from applier import generate_curl_scripts, execute_curl_script
-from config import EXPORT_DIR
+from config import EXPORT_DIR, SCAN_THREADS
+from perf import ScanTimer
 
 app = FastAPI(title="Komga Smart Scanner")
 
@@ -105,22 +106,35 @@ async def run_scan(req: ScanRequest):
         root = root[7:]
 
     request_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+    timer = ScanTimer(request_id, EXPORT_DIR)
 
     # 1. DB snapshot
+    timer.begin("db_series")
     db_series = database.read_series(req.library_id)
+    timer.end()
+
+    timer.begin("db_books")
     db_books = database.read_books(req.library_id)
+    timer.end()
 
     # 2. FS walk (with optional hashing)
-    fs_data = walker.walk_library(root, hash_files=req.hash_files)
+    timer.begin("fs_walk", {"hash_files": req.hash_files})
+    fs_data = walker.walk_library(root, hash_files=req.hash_files,
+                                   max_workers=SCAN_THREADS or None)
+    timer.end()
 
     # 3. Diff
+    timer.begin("diff")
     d = differ.compute(db_series, db_books, fs_data)
+    timer.end()
 
     # 4. Export JSONs to request_id folder
+    timer.begin("export_jsons")
     paths = export_json.export_snapshots(
         req.library_id, lib["name"], root,
         db_series, db_books, fs_data, request_id,
     )
+    timer.end()
 
     # 5. Save diff as J3
     folder = os.path.join(EXPORT_DIR, request_id)
@@ -164,6 +178,17 @@ async def run_scan(req: ScanRequest):
     with open(diff_path, "w") as f:
         json.dump(diff_data, f, indent=2, default=str)
 
+    # 6. Write performance log
+    perf = timer.finish()
+    timer.write_log(folder, perf)
+
+    print(f"[scan] {request_id} — total={perf['total_ms']}ms "
+          f"db_series={next(p['elapsed_ms'] for p in perf['phases'] if p['phase']=='db_series')}ms "
+          f"db_books={next(p['elapsed_ms'] for p in perf['phases'] if p['phase']=='db_books')}ms "
+          f"fs_walk={next(p['elapsed_ms'] for p in perf['phases'] if p['phase']=='fs_walk')}ms "
+          f"diff={next(p['elapsed_ms'] for p in perf['phases'] if p['phase']=='diff')}ms "
+          f"export={next(p['elapsed_ms'] for p in perf['phases'] if p['phase']=='export_jsons')}ms")
+
     totals = {
         "new_series": len(d.new_series),
         "deleted_series": len(d.deleted_series),
@@ -192,10 +217,15 @@ async def run_scan(req: ScanRequest):
         "has_changed_books": len(d.changed_books) > 0,
         "has_pending_hash": len(d.pending_hash) > 0,
         "total_actions": sum(totals.values()),
+        "perf": {
+            "total_ms": perf["total_ms"],
+            "phases": perf["phases"],
+        },
         "files": {
             "db": paths["db"],
             "fs": paths["fs"],
             "diff": diff_path,
+            "perf": os.path.join(folder, f"{request_id}_perf.json"),
         },
     }
 

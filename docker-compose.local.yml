@@ -71,6 +71,7 @@ services:
       PG_PASSWORD: komga123
       DRY_RUN: "false"
       PORT: "5050"
+      SCAN_THREADS: ${SCAN_THREADS:-0}
     volumes:
       - /Users/duong/Documents/data-komga:/data:ro
       - ./exports:/exports

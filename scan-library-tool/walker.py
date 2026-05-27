@@ -1,7 +1,11 @@
-"""Filesystem walker — scans library root for .pdf files only."""
+"""Filesystem walker — scans library root for .pdf files only.
+   Supports parallel directory scanning via ThreadPoolExecutor."""
 
-from pathlib import Path
+import os
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from pathlib import Path
 
 try:
     import xxhash
@@ -10,72 +14,104 @@ except ImportError:
     _has_xxhash = False
 
 
+def _mtime(path: Path) -> str:
+    return datetime.fromtimestamp(
+        path.stat().st_mtime, tz=timezone.utc
+    ).isoformat()
+
+
+def _hash(path: Path) -> str:
+    if not _has_xxhash:
+        raise RuntimeError("xxhash package required for file hashing: pip install xxhash")
+    h = xxhash.xxh3_128(seed=0)
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _walk_one_dir(entry: Path, hash_files: bool) -> tuple[str, dict | None]:
+    """Process one series directory. Thread-safe — no shared mutable state."""
+    try:
+        books = []
+        for f in sorted(entry.rglob("*"), key=lambda e: e.name.lower()):
+            if f.is_file() and f.suffix.lower() == ".pdf":
+                book = {
+                    "url": f.as_uri(),
+                    "name": f.stem,
+                    "file_size": f.stat().st_size,
+                    "file_last_modified": _mtime(f),
+                }
+                if hash_files:
+                    book["file_hash"] = _hash(f)
+                books.append(book)
+        if not books:
+            return (entry.as_uri(), None)
+        return (entry.as_uri(), {
+            "url": entry.as_uri(),
+            "name": entry.name,
+            "file_last_modified": _mtime(entry),
+            "books": books,
+        })
+    except PermissionError as e:
+        return (entry.as_uri(), None)
+
+
 def walk_library(root: str, *, exclusions: set[str] | None = None,
                  oneshots_dir: str | None = None,
-                 hash_files: bool = False) -> dict:
+                 hash_files: bool = False,
+                 max_workers: int | None = None,
+                 on_progress: callable | None = None) -> dict:
     """
     Walk a library root directory scanning for .pdf files only.
 
     Args:
+        root: Filesystem path to the library root
+        exclusions: Set of directory names to skip
+        oneshots_dir: Subdirectory name for oneshots (e.g. "Oneshots")
         hash_files: If True, compute XXH3_128 hash for each PDF file
-                    (same algorithm Komga uses for its file_hash field).
+        max_workers: Number of parallel threads for directory scanning.
+                     0 or None = auto (CPU count × 2). 1 = sequential.
+        on_progress: Optional callback(completed, total) called after each
+                     directory is processed.
 
     Returns:
     {
-      "series": { "file:///root/SeriesA": {
-          "url": "...", "name": "SeriesA",
-          "file_last_modified": "...",
-          "books": [{"url": "...", "name": "Ch01", "file_size": 1234,
-                     "file_last_modified": "...", "file_hash": "abc123"}]}},
+      "series": { "file:///root/SeriesA": { ... } },
       "oneshots": [...]
     }
     """
+    if max_workers is None or max_workers == 0:
+        max_workers = max((os.cpu_count() or 4) * 2, 1)
+
     root_path = Path(root).resolve()
     exclusions = exclusions or set()
 
-    def _mtime(path: Path) -> str:
-        return datetime.fromtimestamp(
-            path.stat().st_mtime, tz=timezone.utc
-        ).isoformat()
+    # Collect directories to scan
+    dirs = [
+        e for e in root_path.iterdir()
+        if e.is_dir() and e.name not in exclusions
+    ]
 
-    def _hash(path: Path) -> str:
-        if not _has_xxhash:
-            raise RuntimeError("xxhash package required for file hashing: pip install xxhash")
-        h = xxhash.xxh3_128(seed=0)
-        with open(path, "rb") as f:
-            while chunk := f.read(65536):
-                h.update(chunk)
-        return h.hexdigest()
-
-    series = {}
-    oneshots = []
-
-    for entry in sorted(root_path.iterdir(), key=lambda e: e.name.lower()):
-        if entry.name in exclusions:
-            continue
-
-        if entry.is_dir():
-            books = []
-            for f in sorted(entry.rglob("*"), key=lambda e: e.name.lower()):
-                if f.is_file() and f.suffix.lower() == ".pdf":
-                    book = {
-                        "url": f.as_uri(),
-                        "name": f.stem,
-                        "file_size": f.stat().st_size,
-                        "file_last_modified": _mtime(f),
-                    }
-                    if hash_files:
-                        book["file_hash"] = _hash(f)
-                    books.append(book)
-            if books:
-                series[entry.as_uri()] = {
-                    "url": entry.as_uri(),
-                    "name": entry.name,
-                    "file_last_modified": _mtime(entry),
-                    "books": books,
-                }
+    # Parallel walk directories
+    series: dict[str, dict] = {}
+    if dirs:
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_walk_one_dir, d, hash_files): d
+                for d in dirs
+            }
+            completed = 0
+            for future in as_completed(futures):
+                completed += 1
+                if on_progress:
+                    on_progress(completed, len(dirs))
+                series_url, series_data = future.result()
+                if series_data:
+                    series[series_url] = series_data
 
     # Oneshots at root level (PDF only)
+    oneshots: list[dict] = []
     for entry in sorted(root_path.iterdir(), key=lambda e: e.name.lower()):
         if entry.is_file() and entry.suffix.lower() == ".pdf":
             oneshot = {

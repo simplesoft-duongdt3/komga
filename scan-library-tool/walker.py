@@ -61,7 +61,7 @@ def walk_library(root: str, *, exclusions: set[str] | None = None,
                  oneshots_dir: str | None = None,
                  hash_files: bool = False,
                  max_workers: int | None = None,
-                 on_progress: callable | None = None) -> dict:
+                  on_progress: Callable | None = None) -> dict:
     """
     Walk a library root directory scanning for .pdf files only.
 

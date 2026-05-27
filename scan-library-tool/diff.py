@@ -22,6 +22,22 @@ def _normalize_file_url(url: str) -> str:
     return f"file:///{path}"
 
 
+def _mtime_equals(fs_mtime: str | None, db_mtime: str | None) -> bool | None:
+    """Compare mtime strings tolerating sub-second and timezone differences.
+
+    Returns:
+      True   — mtimes match (same second)
+      False  — mtimes differ
+      None   — one or both missing, can't determine
+    """
+    if not fs_mtime or not db_mtime:
+        return None
+    # Trim to second-level precision, strip timezone
+    fs_trimmed = fs_mtime.split(".")[0].replace("Z", "").replace("z", "")
+    db_trimmed = db_mtime.split(".")[0].replace("Z", "").replace("z", "")
+    return fs_trimmed == db_trimmed
+
+
 @dataclass
 class Diff:
     new_series: list[dict] = field(default_factory=list)
@@ -29,6 +45,7 @@ class Diff:
     new_books: list[dict] = field(default_factory=list)
     deleted_books: list[dict] = field(default_factory=list)
     changed_books: list[dict] = field(default_factory=list)
+    pending_hash: list[dict] = field(default_factory=list)
 
 
 def compute(series_from_db: list[dict], books_from_db: list[dict],
@@ -92,8 +109,20 @@ def compute(series_from_db: list[dict], books_from_db: list[dict],
 
         if fs_hash and db_hash:
             changed = fs_hash != db_hash
+        elif db_hash and not fs_hash:
+            # DB has hash but FS doesn't (hash_files=False this run)
+            changed = (_mtime_equals(fs_b["file_last_modified"], db_b.get("file_last_modified")) is False or
+                       fs_b["file_size"] != db_b.get("file_size"))
+        elif fs_hash and not db_hash:
+            # FS has hash but DB doesn't (analyzer hasn't computed it yet)
+            diff.pending_hash.append(dict(
+                id=db_b["id"],
+                name=db_b["name"],
+                series_id=db_b.get("series_id"),
+                url=url,
+            ))
         else:
-            changed = (fs_b["file_last_modified"] != db_b.get("file_last_modified") or
+            changed = (_mtime_equals(fs_b["file_last_modified"], db_b.get("file_last_modified")) is False or
                        fs_b["file_size"] != db_b.get("file_size"))
 
         if changed:

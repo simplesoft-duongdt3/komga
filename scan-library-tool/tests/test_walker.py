@@ -129,11 +129,11 @@ class TestWalker(unittest.TestCase):
             books = list(result["series"].values())[0]["books"]
             b = books[0]
             self.assertIn("file_hash", b)
-            # SHA-256 of "hello pdf"
-            self.assertEqual(len(b["file_hash"]), 64)
+            # XXH3_128 of "hello pdf" with seed=0 (matches Komga's hash algorithm)
+            self.assertEqual(len(b["file_hash"]), 32)
             self.assertEqual(
                 b["file_hash"],
-                "9f275d73a74baf528734b92128a320df66ae66dab4935c842d8c3879d498e3f4",
+                "3ec83f6f7b6fcae0825ab2f6bdb18506",
             )
 
     def test_hash_files_disabled(self):
@@ -148,4 +148,59 @@ class TestWalker(unittest.TestCase):
             books = list(result["series"].values())[0]["books"]
             b = books[0]
             self.assertNotIn("file_hash", b)
+
+    def test_hash_changes_when_content_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            series_a = root / "Series A"
+            series_a.mkdir()
+            self._make_file(series_a, "a.pdf", "same size but different content")
+            self._make_file(series_a, "b.pdf", "same size but different CONTENT!")
+
+            result = walk_library(str(root), hash_files=True)
+
+            books = list(result["series"].values())[0]["books"]
+            self.assertEqual(len(books), 2)
+            # Both files have same size but different content → different hashes
+            self.assertNotEqual(books[0]["file_hash"], books[1]["file_hash"])
+
+    def test_hash_consistent_across_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            series_a = root / "Series A"
+            series_a.mkdir()
+            self._make_file(series_a, "ch01.pdf", "stable content")
+
+            h1 = walk_library(str(root), hash_files=True)
+            h2 = walk_library(str(root), hash_files=True)
+
+            b1 = list(h1["series"].values())[0]["books"][0]
+            b2 = list(h2["series"].values())[0]["books"][0]
+            self.assertEqual(b1["file_hash"], b2["file_hash"])
+
+    def test_all_books_get_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            s = root / "Series"
+            s.mkdir()
+            self._make_file(s, "a.pdf", "1")
+            self._make_file(s, "b.pdf", "2")
+            self._make_file(s, "c.pdf", "3")
+
+            result = walk_library(str(root), hash_files=True)
+
+            books = list(result["series"].values())[0]["books"]
+            self.assertEqual(len(books), 3)
+            for b in books:
+                self.assertEqual(len(b["file_hash"]), 32)
+
+    def test_oneshot_gets_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._make_file(root, "oneshot.pdf", "oneshot content")
+
+            result = walk_library(str(root), hash_files=True)
+
+            self.assertEqual(len(result["oneshots"]), 1)
+            self.assertEqual(len(result["oneshots"][0]["file_hash"]), 32)
 

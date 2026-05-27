@@ -1,7 +1,49 @@
 """Tests for the diff engine."""
 
 import unittest
-from diff import Diff, compute, group_new_books_by_series, _normalize_file_url
+from diff import Diff, compute, group_new_books_by_series, _normalize_file_url, _mtime_equals
+
+
+class TestMtimeEquals(unittest.TestCase):
+    """Test mtime comparison with sub-second/timezone tolerance."""
+
+    def test_fs_with_subseconds_tz_matches_db_rounded_up(self):
+        """FS: 10:25:23.774 vs DB: 10:25:24 (different second → not equal)."""
+        self.assertFalse(_mtime_equals(
+            "2026-05-26T10:25:23.774395+00:00",
+            "2026-05-26T10:25:24",
+        ))
+
+    def test_same_second_different_subseconds(self):
+        """Same second, different sub-second precision."""
+        self.assertTrue(_mtime_equals(
+            "2026-01-01T12:00:00.123456+00:00",
+            "2026-01-01T12:00:00",
+        ))
+
+    def test_exact_match(self):
+        self.assertTrue(_mtime_equals(
+            "2026-01-01T12:00:00",
+            "2026-01-01T12:00:00",
+        ))
+
+    def test_different_seconds(self):
+        self.assertFalse(_mtime_equals(
+            "2026-01-01T12:00:00",
+            "2026-01-01T12:00:01",
+        ))
+
+    def test_missing_values(self):
+        self.assertIsNone(_mtime_equals(None, "2026-01-01T12:00:00"))
+        self.assertIsNone(_mtime_equals("2026-01-01T12:00:00", None))
+        self.assertIsNone(_mtime_equals(None, None))
+
+    def test_fs_with_utc_z(self):
+        """FS format with Z suffix instead of +00:00."""
+        self.assertTrue(_mtime_equals(
+            "2026-01-01T12:00:00Z",
+            "2026-01-01T12:00:00",
+        ))
 
 
 class TestNormalizeFileUrl(unittest.TestCase):
@@ -310,3 +352,262 @@ class TestDiff(unittest.TestCase):
         self.assertEqual(len(result["id-B"]), 1)
         self.assertEqual(result["id-B"][0]["name"], "New")
 
+
+class TestDiffWithHash(unittest.TestCase):
+    """Tests for hash-based change detection."""
+
+    def test_changed_book_different_hash(self):
+        """Hash differs → changed, even if mtime/size match."""
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "aaaa", "series_id": "s1"}]
+        fs = {
+            "series": {
+                "file:///root/S": {
+                    "url": "file:///root/S", "name": "S",
+                    "file_last_modified": "2026-01-01T00:00:00+00:00",
+                    "books": [
+                        {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                         "file_size": 1000,
+                         "file_last_modified": "2026-01-01T00:00:00+00:00",
+                         "file_hash": "bbbb"},  # different hash
+                    ],
+                }
+            },
+            "oneshots": [],
+        }
+
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.changed_books), 1)
+
+    def test_no_change_when_hash_matches(self):
+        """Hash matches → not changed, even if mtime differs."""
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "xxhash123", "series_id": "s1"}]
+        fs = {
+            "series": {
+                "file:///root/S": {
+                    "url": "file:///root/S", "name": "S",
+                    "file_last_modified": "2026-01-01T00:00:00+00:00",
+                    "books": [
+                        {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                         "file_size": 1000,
+                         "file_last_modified": "2026-02-02T00:00:00+00:00",  # different mtime
+                         "file_hash": "xxhash123"},  # same hash
+                    ],
+                }
+            },
+            "oneshots": [],
+        }
+
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_no_change_when_hash_matches_and_size_differs(self):
+        """Hash matches → not changed, even if size differs (hash is truth)."""
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "xxhash456", "series_id": "s1"}]
+        fs = {
+            "series": {
+                "file:///root/S": {
+                    "url": "file:///root/S", "name": "S",
+                    "file_last_modified": "2026-01-01T00:00:00+00:00",
+                    "books": [
+                        {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                         "file_size": 9999,  # different size
+                         "file_last_modified": "2026-01-01T00:00:00+00:00",
+                         "file_hash": "xxhash456"},  # same hash
+                    ],
+                }
+            },
+            "oneshots": [],
+        }
+
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_hash_used_only_when_available_on_both_sides(self):
+        """If FS hash is available but DB hash is empty → not changed (pending analysis)."""
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "", "series_id": "s1"}]  # empty hash in DB
+        fs = {
+            "series": {
+                "file:///root/S": {
+                    "url": "file:///root/S", "name": "S",
+                    "file_last_modified": "2026-01-01T00:00:00+00:00",
+                    "books": [
+                        {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                         "file_size": 9999,  # different size
+                         "file_last_modified": "2026-01-01T00:00:00+00:00",
+                         "file_hash": "somehash"},  # FS has hash
+                    ],
+                }
+            },
+            "oneshots": [],
+        }
+
+        d = compute(series, books, fs)
+        # DB hash is empty, FS hash is set → not changed
+        # The file simply hasn't been analyzed by Komga yet
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_fallback_to_mtime_when_both_hashes_empty(self):
+        """If both hashes are empty → fall back to mtime/size."""
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "", "series_id": "s1"}]
+        fs = {
+            "series": {
+                "file:///root/S": {
+                    "url": "file:///root/S", "name": "S",
+                    "file_last_modified": "2026-01-01T00:00:00+00:00",
+                    "books": [
+                        {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                         "file_size": 9999,  # different size
+                         "file_last_modified": "2026-01-01T00:00:00+00:00",
+                         "file_hash": ""},  # no hash on either side
+                    ],
+                }
+            },
+            "oneshots": [],
+        }
+
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.changed_books), 1)
+
+
+
+class TestPendingHash(unittest.TestCase):
+    """Tests for the pending_hash feature (FS hash exists, DB hash empty)."""
+
+    def test_fs_has_hash_db_empty(self):
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "", "series_id": "s1"}]
+        fs = {
+            "series": {"file:///root/S": {
+                "url": "file:///root/S", "name": "S",
+                "file_last_modified": "2026-01-01T00:00:00+00:00",
+                "books": [{"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                           "file_size": 1000,
+                           "file_last_modified": "2026-01-01T00:00:00+00:00",
+                           "file_hash": "xxhash"}],
+            }},
+            "oneshots": [],
+        }
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.pending_hash), 1)
+        self.assertEqual(d.pending_hash[0]["id"], "b1")
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_fs_and_db_both_empty_hash_no_change(self):
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "", "series_id": "s1"}]
+        fs = {
+            "series": {"file:///root/S": {
+                "url": "file:///root/S", "name": "S",
+                "file_last_modified": "2026-01-01T00:00:00+00:00",
+                "books": [{"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                           "file_size": 1000,
+                           "file_last_modified": "2026-01-01T00:00:00+00:00",
+                           "file_hash": ""}],
+            }},
+            "oneshots": [],
+        }
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.pending_hash), 0)
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_different_hash_is_changed_not_pending(self):
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "old", "series_id": "s1"}]
+        fs = {
+            "series": {"file:///root/S": {
+                "url": "file:///root/S", "name": "S",
+                "file_last_modified": "2026-01-01T00:00:00+00:00",
+                "books": [{"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                           "file_size": 1000,
+                           "file_last_modified": "2026-01-01T00:00:00+00:00",
+                           "file_hash": "new"}],
+            }},
+            "oneshots": [],
+        }
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.pending_hash), 0)
+        self.assertEqual(len(d.changed_books), 1)
+
+    def test_same_hash_no_change(self):
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [{"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+                  "file_last_modified": "2026-01-01T00:00:00+00:00",
+                  "file_size": 1000, "file_hash": "same", "series_id": "s1"}]
+        fs = {
+            "series": {"file:///root/S": {
+                "url": "file:///root/S", "name": "S",
+                "file_last_modified": "2026-01-01T00:00:00+00:00",
+                "books": [{"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                           "file_size": 1000,
+                           "file_last_modified": "2026-01-01T00:00:00+00:00",
+                           "file_hash": "same"}],
+            }},
+            "oneshots": [],
+        }
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.pending_hash), 0)
+        self.assertEqual(len(d.changed_books), 0)
+
+    def test_mixed_pending_and_changed(self):
+        series = [{"id": "s1", "name": "S", "url": "file:///root/S",
+                   "file_last_modified": "2026-01-01T00:00:00+00:00"}]
+        books = [
+            {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf",
+             "file_last_modified": "2026-01-01T00:00:00+00:00",
+             "file_size": 1000, "file_hash": "", "series_id": "s1"},
+            {"id": "b2", "name": "Ch02", "url": "file:///root/S/Ch02.pdf",
+             "file_last_modified": "2026-01-01T00:00:00+00:00",
+             "file_size": 2000, "file_hash": "old", "series_id": "s1"},
+        ]
+        fs = {
+            "series": {"file:///root/S": {
+                "url": "file:///root/S", "name": "S",
+                "file_last_modified": "2026-01-01T00:00:00+00:00",
+                "books": [
+                    {"url": "file:///root/S/Ch01.pdf", "name": "Ch01",
+                     "file_size": 1000,
+                     "file_last_modified": "2026-01-01T00:00:00+00:00",
+                     "file_hash": "new"},
+                    {"url": "file:///root/S/Ch02.pdf", "name": "Ch02",
+                     "file_size": 2000,
+                     "file_last_modified": "2026-01-01T00:00:00+00:00",
+                     "file_hash": "new"},
+                ],
+            }},
+            "oneshots": [],
+        }
+        d = compute(series, books, fs)
+        self.assertEqual(len(d.pending_hash), 1)
+        self.assertEqual(d.pending_hash[0]["id"], "b1")
+        self.assertEqual(len(d.changed_books), 1)
+        self.assertEqual(d.changed_books[0]["id"], "b2")

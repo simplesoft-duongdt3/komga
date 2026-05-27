@@ -1,422 +1,288 @@
-"""FuncToWeb server — type-hinted functions get auto-generated web UI."""
+"""FastAPI server — step-by-step web UI for smart scanning."""
 
 import json
 import os
-from typing import Annotated
+from datetime import datetime, timezone
 
-from func_to_web import run, ActionTable, HiddenFunction
-from func_to_web.types import Label
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import api
-import config
 import db as database
 import walker
 import diff as differ
 import export_json
+from applier import generate_curl_scripts, execute_curl_script
+from config import EXPORT_DIR
+
+app = FastAPI(title="Komga Smart Scanner")
+
+VERSION_FILE = os.path.join(os.path.dirname(__file__), "version.txt")
 
 
-# ── Shared helpers ──────────────────────────────────────────
+def _read_version() -> str:
+    try:
+        with open(VERSION_FILE) as f:
+            return f.read().strip()
+    except (FileNotFoundError, OSError):
+        return "dev"
 
-def _resolve_library(library_id: str) -> dict:
+
+VERSION = _read_version()
+
+
+@app.get("/api/version")
+async def version():
+    return {"version": VERSION, "title": "Komga Smart Scanner"}
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# ── SPA ─────────────────────────────────────────────────────
+
+@app.get("/")
+async def root():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+# ── Pydantic schemas ────────────────────────────────────────
+
+class ScanRequest(BaseModel):
+    library_id: str
+    hash_files: bool = True
+
+class CurlRequest(BaseModel):
+    request_id: str
+    categories: list[str]
+    analyze: bool = True
+    refresh: bool = True
+
+class ExecuteRequest(BaseModel):
+    request_id: str
+    script_name: str
+
+
+# ── API: list libraries ────────────────────────────────────
+
+@app.get("/api/libraries")
+async def get_libraries():
+    try:
+        libs = api.list_libraries()
+        return libs
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── API: list requests (history) ────────────────────────────
+
+@app.get("/api/list-requests")
+async def list_requests():
+    export_path = EXPORT_DIR
+    if not os.path.isdir(export_path):
+        return []
+    reqs = []
+    for name in sorted(os.listdir(export_path), reverse=True):
+        folder = os.path.join(export_path, name)
+        if os.path.isdir(folder) and name.count("-") == 1 and len(name) >= 13:
+            reqs.append({"request_id": name})
+    return reqs
+
+
+# ── API: scan (step 2) ─────────────────────────────────────
+
+@app.post("/api/scan")
+async def run_scan(req: ScanRequest):
     libs = api.list_libraries()
-    lib = next((l for l in libs if l["id"] == library_id), None)
+    lib = next((l for l in libs if l["id"] == req.library_id), None)
     if not lib:
-        raise ValueError(f"Library not found: {library_id}")
+        raise HTTPException(404, "Library not found")
+
     root = lib.get("root", "")
     if root.startswith("file://"):
         root = root[7:]
-    return {"id": lib["id"], "name": lib["name"], "root": root}
 
+    request_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
 
-def _run_diff(library_id: str, root: str, hash_files: bool = False) -> dict:
-    db_series = database.read_series(library_id)
-    db_books = database.read_books(library_id)
-    fs = walker.walk_library(root, hash_files=hash_files)
-    d = differ.compute(db_series, db_books, fs)
+    # 1. DB snapshot
+    db_series = database.read_series(req.library_id)
+    db_books = database.read_books(req.library_id)
+
+    # 2. FS walk (with optional hashing)
+    fs_data = walker.walk_library(root, hash_files=req.hash_files)
+
+    # 3. Diff
+    d = differ.compute(db_series, db_books, fs_data)
+
+    # 4. Export JSONs to request_id folder
+    paths = export_json.export_snapshots(
+        req.library_id, lib["name"], root,
+        db_series, db_books, fs_data, request_id,
+    )
+
+    # 5. Save diff as J3
+    folder = os.path.join(EXPORT_DIR, request_id)
+    os.makedirs(folder, exist_ok=True)
+
+    diff_data = {
+        "type": "J3 — Diff Result",
+        "request_id": request_id,
+        "library": {"id": req.library_id, "name": lib["name"], "root": root},
+        "hash_files": req.hash_files,
+        "exported_at": datetime.now(tz=timezone.utc).isoformat(),
+        "db": {"series": len(db_series), "books": len(db_books)},
+        "fs": {
+            "series": len(fs_data["series"]),
+            "files": (
+                sum(len(s["books"]) for s in fs_data["series"].values())
+                + len(fs_data.get("oneshots", []))
+            ),
+        },
+        "diff": {
+            "new_series": _ser_to_dict(d.new_series),
+            "deleted_series": _ser_to_dict(d.deleted_series),
+            "new_books": _book_to_dict(d.new_books),
+            "deleted_books": _book_to_dict(d.deleted_books),
+            "changed_books": _book_to_dict(d.changed_books),
+            "pending_hash": _book_to_dict(d.pending_hash),
+        },
+        "_raw_diff": {
+            "new_series": d.new_series,
+            "deleted_series": d.deleted_series,
+            "new_books": d.new_books,
+            "deleted_books": d.deleted_books,
+            "changed_books": d.changed_books,
+            "pending_hash": d.pending_hash,
+        },
+        "_raw_fs_data": fs_data,
+        "_raw_db_series_by_url": {s["url"]: s for s in db_series},
+    }
+
+    diff_path = os.path.join(folder, f"{request_id}_diff.json")
+    with open(diff_path, "w") as f:
+        json.dump(diff_data, f, indent=2, default=str)
+
+    totals = {
+        "new_series": len(d.new_series),
+        "deleted_series": len(d.deleted_series),
+        "new_books": len(d.new_books),
+        "deleted_books": len(d.deleted_books),
+        "changed_books": len(d.changed_books),
+        "pending_hash": len(d.pending_hash),
+    }
+
     return {
-        "db_series": len(db_series),
-        "db_books": len(db_books),
-        "fs_series": len(fs["series"]),
-        "fs_books": sum(len(s["books"]) for s in fs["series"].values()) + len(fs.get("oneshots", [])),
-        "diff": d,
-        "fs_data": fs,
-        "db_series_by_url": {s["url"]: s for s in db_series},
-        "_db_series": db_series,
-        "_db_books": db_books,
-        "_fs": fs,
+        "request_id": request_id,
+        "library": {"id": req.library_id, "name": lib["name"], "root": root},
+        "db": {"series": len(db_series), "books": len(db_books)},
+        "fs": {
+            "series": len(fs_data["series"]),
+            "files": (
+                sum(len(s["books"]) for s in fs_data["series"].values())
+                + len(fs_data.get("oneshots", []))
+            ),
+        },
+        "diff": totals,
+        "has_new_series": len(d.new_series) > 0,
+        "has_deleted_series": len(d.deleted_series) > 0,
+        "has_new_books": len(d.new_books) > 0,
+        "has_deleted_books": len(d.deleted_books) > 0,
+        "has_changed_books": len(d.changed_books) > 0,
+        "has_pending_hash": len(d.pending_hash) > 0,
+        "total_actions": sum(totals.values()),
+        "files": {
+            "db": paths["db"],
+            "fs": paths["fs"],
+            "diff": diff_path,
+        },
     }
 
 
-def _curl_cmd(method: str, path: str, body: dict | None = None) -> str:
-    """Build a curl command for the given Komga API call."""
-    url = f"{config.KOMGA_URL}{path}"
-    auth = f"{config.KOMGA_USER}:{config.KOMGA_PASSWORD}"
-    cmd = f"curl -s -X {method} '{url}'"
-    if auth != ":":
-        cmd += f" \\\n  -u '{auth}'"
-    cmd += " \\\n  -H 'Content-Type: application/json'"
-    if body:
-        body_str = json.dumps(body)
-        # Escape single quotes in body for shell
-        body_safe = body_str.replace("'", "'\\''")
-        cmd += f" \\\n  -d '{body_safe}'"
-    return cmd
+def _ser_to_dict(items: list) -> list[dict]:
+    return [{"name": s.get("name", ""), "url": s.get("url", ""),
+             "books": len(s.get("books", []))} for s in items]
+
+def _book_to_dict(items: list) -> list[dict]:
+    return [{"name": b.get("name", ""), "url": b.get("url", ""),
+             "id": b.get("id", "")} for b in items]
 
 
-def _book_body(b: dict) -> dict:
-    """Build book dict for API body, including fileHash only when available."""
-    body = {
-        "name": b["name"],
-        "url": b["url"],
-        "fileSize": b["file_size"],
-        "fileLastModified": b["file_last_modified"],
-    }
-    if b.get("file_hash"):
-        body["fileHash"] = b["file_hash"]
-    return body
+# ── API: generate curl scripts (step 3) ────────────────────
+
+@app.post("/api/curl")
+async def gen_curl(req: CurlRequest):
+    folder = os.path.join(EXPORT_DIR, req.request_id)
+    diff_path = os.path.join(folder, f"{req.request_id}_diff.json")
+    if not os.path.exists(diff_path):
+        raise HTTPException(404, f"Scan result not found: {req.request_id}")
+
+    with open(diff_path) as f:
+        diff_data = json.load(f)
+
+    raw = diff_data.get("_raw_diff", {})
+    fs_data = diff_data.get("_raw_fs_data", {"series": {}, "oneshots": []})
+
+    d = differ.Diff(
+        new_series=raw.get("new_series", []),
+        deleted_series=raw.get("deleted_series", []),
+        new_books=raw.get("new_books", []),
+        deleted_books=raw.get("deleted_books", []),
+        changed_books=raw.get("changed_books", []),
+        pending_hash=raw.get("pending_hash", []),
+    )
+
+    lib_id = diff_data.get("library", {}).get("id", "")
+
+    scripts = generate_curl_scripts(
+        d, lib_id, req.categories,
+        req.analyze, req.refresh,
+        folder, req.request_id,
+    )
+
+    return {"scripts": scripts}
 
 
-# ── Page 1: List libraries ──────────────────────────────────
+# ── API: execute curl script (step 4, SSE stream) ──────────
 
-def list_libraries() -> ActionTable:
-    """Select a library to scan (PDF files only)."""
-    libs = api.list_libraries()
-    return ActionTable(
-        data=[
-            {
-                "library_id": l["id"],
-                "library_name": l["name"],
-                "library_root": l.get("root", ""),
-            }
-            for l in libs
-        ],
-        action=scan_library,
+@app.post("/api/execute")
+async def exec_script(req: ExecuteRequest):
+    folder = os.path.join(EXPORT_DIR, req.request_id)
+    script_path = os.path.join(folder, f"{req.request_id}_{req.script_name}.sh")
+    log_path = os.path.join(folder, f"{req.request_id}_{req.script_name}.log")
+
+    if not os.path.exists(script_path):
+        raise HTTPException(404, f"Script not found: {req.script_name}")
+
+    async def event_stream():
+        for event in execute_curl_script(str(script_path), str(log_path) if log_path else None):
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-# ── Page 2: Scan library (show diff) ────────────────────────
+# ── API: download exported files ───────────────────────────
 
-def scan_library(
-    library_id: Annotated[str, Label("Library ID")],
-    library_name: Annotated[str, Label("Name")] = "",
-    library_root: Annotated[str, Label("Root")] = "",
-    hash_files: Annotated[bool, Label("🔐 Compute file hashes (slower, more accurate)")] = False,
-):
-    """Scan a library and show what changed."""
-    if library_root.startswith("file://"):
-        library_root = library_root[7:]
-
-    result = _run_diff(library_id, library_root, hash_files=hash_files)
-    d = result["diff"]
-
-    j1_path, j2_path = export_json.export_snapshots(
-        library_id, library_name, library_root,
-        result["_db_series"], result["_db_books"], result["_fs"],
-    )
-
-    # ── Build output tables ───────────────────────────────
-
-    new_series_rows = [
-        {"Series": s.get("name", ""),
-         "Books": len(s.get("books", [])),
-         "URL": s.get("url", "")}
-        for s in d.new_series
-    ]
-
-    deleted_series_rows = [
-        {"Series": s.get("name", ""),
-         "ID": s.get("id", ""),
-         "URL": s.get("url", "")}
-        for s in d.deleted_series
-    ]
-
-    new_books_rows = [
-        {"Book": b.get("name", ""),
-         "URL": b.get("url", "")}
-        for b in d.new_books
-    ]
-
-    deleted_books_rows = [
-        {"Book": b.get("name", ""),
-         "ID": b.get("id", ""),
-         "URL": b.get("url", "")}
-        for b in d.deleted_books
-    ]
-
-    changed_books_rows = [
-        {"Book": b.get("name", ""),
-         "ID": b.get("id", ""),
-         "URL": b.get("url", "")}
-        for b in d.changed_books
-    ]
-
-    totals = (
-        f"Library: **{library_name}**\n\n"
-        f"DB state: {result['db_series']} series, {result['db_books']} books\n"
-        f"Filesystem: {result['fs_series']} series, {result['fs_books']} PDF files\n\n"
-        f"📁 Exported: `{j1_path}` and `{j2_path}`\n\n"
-        f"### Changes\n"
-        f"| Category | Count |\n|----------|------|\n"
-        f"| ✨ New series | {len(d.new_series)} |\n"
-        f"| 🗑 Deleted series | {len(d.deleted_series)} |\n"
-        f"| 📄 New books | {len(d.new_books)} |\n"
-        f"| 🗑 Deleted books | {len(d.deleted_books)} |\n"
-        f"| ✏ Changed books | {len(d.changed_books)} |"
-    )
-
-    total_actions = (len(d.new_series) + len(d.deleted_series) +
-                     len(d.new_books) + len(d.deleted_books) +
-                     len(d.changed_books))
-
-    if total_actions == 0:
-        return (totals, "✅ No changes detected — library is up to date.")
-
-    outputs = [totals]
-
-    if new_series_rows:
-        outputs.append(new_series_rows)
-    if deleted_series_rows:
-        outputs.append(deleted_series_rows)
-    if new_books_rows:
-        outputs.append(new_books_rows)
-    if deleted_books_rows:
-        outputs.append(deleted_books_rows)
-    if changed_books_rows:
-        outputs.append(changed_books_rows)
-
-    # ── Action options: export curl or apply via API ──────
-
-    action_options = [
-        {
-            "action_mode": "export",
-            "action_label": "📋 Export curl commands",
-            "action_library_id": library_id,
-            "action_library_name": library_name,
-            "action_library_root": library_root,
-            "action_hash_files": str(hash_files),
-        },
-        {
-            "action_mode": "apply",
-            "action_label": "🚀 Apply via API",
-            "action_library_id": library_id,
-            "action_library_name": library_name,
-            "action_library_root": library_root,
-            "action_hash_files": str(hash_files),
-        },
-    ]
-
-    outputs.append(
-        ActionTable(
-            data=action_options,
-            action=run_action,
-            headers=["action_mode", "action_label", "action_library_id",
-                     "action_library_name", "action_library_root",
-                     "action_hash_files"],
-        )
-    )
-
-    return tuple(outputs)
+@app.get("/api/exports/{request_id}/{filename:path}")
+async def download_file(request_id: str, filename: str):
+    file_path = os.path.join(EXPORT_DIR, request_id, filename)
+    abs_path = os.path.normpath(file_path)
+    allowed_dir = os.path.normpath(EXPORT_DIR)
+    if not abs_path.startswith(allowed_dir):
+        raise HTTPException(403, "Forbidden")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(404, "File not found")
+    return FileResponse(abs_path)
 
 
-# ── Page 3: Run action (export curl or apply via API) ───────
-
-def run_action(
-    action_mode: Annotated[str, Label("Mode")],
-    action_label: Annotated[str, Label("Action")] = "",
-    action_library_id: Annotated[str, Label("Library ID")] = "",
-    action_library_name: Annotated[str, Label("Name")] = "",
-    action_library_root: Annotated[str, Label("Root")] = "",
-    action_hash_files: Annotated[str, Label("Hash")] = "False",
-    analyze: Annotated[bool, Label("📖 Analyze books")] = True,
-    refresh: Annotated[bool, Label("🔄 Refresh metadata (books + series)")] = True,
-):
-    """Export curl commands or apply changes via API."""
-    if action_library_root.startswith("file://"):
-        action_library_root = action_library_root[7:]
-
-    hash_files = action_hash_files.lower() == "true"
-    result = _run_diff(action_library_id, action_library_root, hash_files=hash_files)
-    d = result["diff"]
-
-    if action_mode == "export":
-        return _build_curl_export(d, action_library_id, action_library_name,
-                                  analyze=analyze, refresh=refresh)
-    else:
-        return _apply_changes(d, action_library_id, action_library_name,
-                              analyze=analyze, refresh=refresh)
-
-
-# ── Curl export mode ────────────────────────────────────────
-
-def _build_curl_export(d: differ.Diff, library_id: str, library_name: str,
-                       analyze: bool = True, refresh: bool = True):
-    """Generate curl commands for all detected changes."""
-    lines = [f"#!/bin/bash",
-             f"# Komga Smart Scanner — API calls for library: {library_name}",
-             f"# Generated: {export_json.datetime.now(export_json.timezone.utc).isoformat()}",
-             f"# analyze={analyze} refresh={refresh}",
-             f""]
-
-    # Create new series + books
-    for s in d.new_series:
-        lines.append(f"# Create series: {s['name']}")
-        lines.append(_curl_cmd("POST", "/api/v1/series", {
-            "libraryId": library_id,
-            "name": s["name"],
-            "url": s["url"],
-            "fileLastModified": s["file_last_modified"],
-            "books": [
-                _book_body(b)
-                for b in s.get("books", [])
-            ],
-        }))
-        if analyze:
-            lines.append(f"# Analyze books in new series: {s['name']}")
-            for b in s.get("books", []):
-                lines.append(f"#   {b['name']}")
-            lines.append(f"# Use GET /api/v1/series/<ID>/books to get book IDs, then POST each")
-        lines.append("")
-
-    # Delete books
-    for b in d.deleted_books:
-        lines.append(f"# Delete book: {b['name']}")
-        lines.append(_curl_cmd("DELETE", f"/api/v1/books/{b['id']}/file"))
-        lines.append("")
-
-    # Delete series
-    for s in d.deleted_series:
-        lines.append(f"# Delete series: {s['name']}")
-        lines.append(_curl_cmd("DELETE", f"/api/v1/series/{s['id']}/file"))
-        lines.append("")
-
-    if d.deleted_books or d.deleted_series:
-        lines.append("# Empty trash")
-        lines.append(_curl_cmd("POST", f"/api/v1/libraries/{library_id}/empty-trash"))
-        lines.append("")
-
-    # Analyze changed books
-    if analyze and d.changed_books:
-        for b in d.changed_books:
-            lines.append(f"# Analyze book: {b['name']}")
-            lines.append(_curl_cmd("POST", f"/api/v1/books/{b['id']}/analyze"))
-            lines.append("")
-
-    # Refresh book metadata
-    if refresh and d.changed_books:
-        for b in d.changed_books:
-            lines.append(f"# Refresh book metadata: {b['name']}")
-            lines.append(_curl_cmd("POST", f"/api/v1/books/{b['id']}/metadata/refresh"))
-            lines.append("")
-
-    # Refresh series metadata for affected series
-    if refresh and d.changed_books:
-        affected = set()
-        for b in d.changed_books:
-            if b.get("series_id"):
-                affected.add(b["series_id"])
-        for sid in affected:
-            lines.append(f"# Refresh series metadata: {sid}")
-            lines.append(_curl_cmd("POST", f"/api/v1/series/{sid}/metadata/refresh"))
-            lines.append("")
-
-    script = "\n".join(lines)
-
-    path = os.path.join(export_json.EXPORT_DIR,
-                        f"{library_name.replace(' ', '_')}_curl_{_timestamp()}.sh")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write(script)
-
-    return (
-        f"Exported curl commands to `{path}`\n\n"
-        f"Run with: `bash {path}`\n\n"
-        f"{len(d.new_series)} new series · "
-        f"{len(d.deleted_series)} deleted series · "
-        f"{len(d.deleted_books)} deleted books · "
-        f"{len(d.changed_books)} changed books"
-    )
-
-
-# ── API apply mode ──────────────────────────────────────────
-
-def _apply_changes(d: differ.Diff, library_id: str, library_name: str):
-    """Apply diff via Komga API calls with print() streaming progress."""
-
-    for s in d.new_series:
-        print(f"+ Creating series: {s['name']}")
-        try:
-            created = api.create_series(
-                library_id=library_id, name=s["name"], url=s["url"],
-                file_last_modified=s["file_last_modified"],
-                books=s.get("books", []),
-            )
-            books = api.get_series_books(created["id"])
-            for b in books:
-                api.analyze_book(b["id"])
-                api.refresh_book_metadata(b["id"])
-            print(f"  Analyzed {len(books)} books")
-        except Exception as e:
-            print(f"  ERROR: {e}")
-
-    for b in d.deleted_books:
-        print(f"- Deleting book: {b['name']}")
-        try:
-            api.delete_book(b["id"])
-        except Exception as e:
-            print(f"  ERROR: {e}")
-
-    for s in d.deleted_series:
-        print(f"- Deleting series: {s['name']}")
-        try:
-            api.delete_series(s["id"])
-        except Exception as e:
-            print(f"  ERROR: {e}")
-
-    if d.deleted_books or d.deleted_series:
-        print("Emptying trash...")
-        try:
-            api.empty_trash(library_id)
-        except Exception as e:
-            print(f"  ERROR: {e}")
-
-    for b in d.changed_books:
-        print(f"~ Analyzing: {b['name']}")
-        try:
-            api.analyze_book(b["id"])
-            api.refresh_book_metadata(b["id"])
-        except Exception as e:
-            print(f"  ERROR: {e}")
-
-    affected = set()
-    for b in d.changed_books:
-        if b.get("series_id"):
-            affected.add(b["series_id"])
-    for sid in affected:
-        try:
-            api.refresh_series_metadata(sid)
-        except Exception as e:
-            print(f"  ERROR refreshing series {sid}: {e}")
-
-    print("Done.")
-    return f"Applied changes to **{library_name}**"
-
-
-def _timestamp() -> str:
-    from datetime import datetime, timezone
-    return datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
-
-
-# ── Run ─────────────────────────────────────────────────────
+# ── Main ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", "5050"))
-    run(
-        [
-            list_libraries,
-            scan_library,
-            HiddenFunction(run_action),
-        ],
-        app_title="Komga Smart Scanner",
-        host="0.0.0.0",
-        port=port,
-    )
+    uvicorn.run("server:app", host="0.0.0.0", port=port, log_level="info")

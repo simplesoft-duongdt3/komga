@@ -1,8 +1,13 @@
 """Filesystem walker — scans library root for .pdf files only."""
 
-import hashlib
 from pathlib import Path
 from datetime import datetime, timezone
+
+try:
+    import xxhash
+    _has_xxhash = True
+except ImportError:
+    _has_xxhash = False
 
 
 def walk_library(root: str, *, exclusions: set[str] | None = None,
@@ -12,7 +17,8 @@ def walk_library(root: str, *, exclusions: set[str] | None = None,
     Walk a library root directory scanning for .pdf files only.
 
     Args:
-        hash_files: If True, compute SHA-256 hash for each PDF file.
+        hash_files: If True, compute XXH3_128 hash for each PDF file
+                    (same algorithm Komga uses for its file_hash field).
 
     Returns:
     {
@@ -33,11 +39,13 @@ def walk_library(root: str, *, exclusions: set[str] | None = None,
         ).isoformat()
 
     def _hash(path: Path) -> str:
-        sha = hashlib.sha256()
+        if not _has_xxhash:
+            raise RuntimeError("xxhash package required for file hashing: pip install xxhash")
+        h = xxhash.xxh3_128(seed=0)
         with open(path, "rb") as f:
             while chunk := f.read(65536):
-                sha.update(chunk)
-        return sha.hexdigest()
+                h.update(chunk)
+        return h.hexdigest()
 
     series = {}
     oneshots = []

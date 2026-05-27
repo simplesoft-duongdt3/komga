@@ -50,6 +50,8 @@ services:
     build:
       context: ./scan-library-tool
       dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
     container_name: komga-smart-scanner
     depends_on:
       postgres:

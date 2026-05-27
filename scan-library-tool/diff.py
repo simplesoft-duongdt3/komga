@@ -46,6 +46,8 @@ class Diff:
     deleted_books: list[dict] = field(default_factory=list)
     changed_books: list[dict] = field(default_factory=list)
     pending_hash: list[dict] = field(default_factory=list)
+    to_be_analyzed: list[dict] = field(default_factory=list)
+    no_metadata: list[dict] = field(default_factory=list)
 
 
 def compute(series_from_db: list[dict], books_from_db: list[dict],

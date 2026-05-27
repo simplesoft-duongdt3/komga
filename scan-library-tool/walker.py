@@ -1,6 +1,8 @@
 """Filesystem walker — scans library root for .pdf files only.
-   Supports parallel directory scanning via ThreadPoolExecutor."""
+   Supports parallel directory scanning via ThreadPoolExecutor.
+   Optional XXH3_128 hash cache to skip inline hash computation."""
 
+import json
 import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,6 +15,31 @@ try:
 except ImportError:
     _has_xxhash = False
 
+_HASH_CACHE: dict[str, str] | None = None
+
+
+def load_hash_cache(path: str | None = None) -> int:
+    """Load the Rust-generated XXH3_128 hash cache.
+
+    Set env HASH_CACHE or pass path directly. No-op if file doesn't exist.
+    Returns number of entries loaded (0 if cache not found or corrupted).
+    """
+    global _HASH_CACHE
+    if path is None:
+        path = os.environ.get("HASH_CACHE", "")
+    if not path or not os.path.isfile(path):
+        return 0
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        entries = data.get("entries", {})
+        _HASH_CACHE = {uri: e["hash"] for uri, e in entries.items()}
+        print(f"[walker] Loaded hash cache: {len(_HASH_CACHE)} entries from {path}")
+        return len(_HASH_CACHE)
+    except Exception as e:
+        print(f"[walker] Failed to load hash cache from {path}: {e}")
+        return 0
+
 
 def _mtime(path: Path) -> str:
     return datetime.fromtimestamp(
@@ -21,6 +48,10 @@ def _mtime(path: Path) -> str:
 
 
 def _hash(path: Path) -> str:
+    if _HASH_CACHE is not None:
+        uri = path.as_uri()
+        if uri in _HASH_CACHE:
+            return _HASH_CACHE[uri]
     if not _has_xxhash:
         raise RuntimeError("xxhash package required for file hashing: pip install xxhash")
     h = xxhash.xxh3_128(seed=0)

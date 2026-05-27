@@ -42,6 +42,55 @@ def read_series(library_id: str) -> list[dict]:
         ]
 
 
+def read_unanalyzed_books(library_id: str) -> list[dict]:
+    """Return active books where MEDIA status is NULL or 'UNKNOWN' (not yet analyzed)."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT b."ID", b."NAME", b."SERIES_ID", m."STATUS" '
+            'FROM "BOOK" b '
+            'LEFT JOIN "MEDIA" m ON b."ID" = m."BOOK_ID" '
+            'WHERE b."LIBRARY_ID" = %s '
+            '  AND b."DELETED_DATE" IS NULL '
+            '  AND (m."BOOK_ID" IS NULL OR m."STATUS" = \'UNKNOWN\') '
+            'ORDER BY b."NAME"',
+            (library_id,),
+        )
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "series_id": r[2],
+                "media_status": r[3],
+            }
+            for r in cur
+        ]
+
+
+def read_books_missing_thumbnail(library_id: str) -> list[dict]:
+    """Return analyzed books (MEDIA = 'READY') that have no selected thumbnail."""
+    with _conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            'SELECT b."ID", b."NAME", b."SERIES_ID", m."STATUS" '
+            'FROM "BOOK" b '
+            'INNER JOIN "MEDIA" m ON b."ID" = m."BOOK_ID" AND m."STATUS" = \'READY\' '
+            'LEFT JOIN "THUMBNAIL_BOOK" tb ON b."ID" = tb."BOOK_ID" AND tb."SELECTED" = true '
+            'WHERE b."LIBRARY_ID" = %s '
+            '  AND b."DELETED_DATE" IS NULL '
+            '  AND tb."BOOK_ID" IS NULL '
+            'ORDER BY b."NAME"',
+            (library_id,),
+        )
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "series_id": r[2],
+                "media_status": r[3],
+            }
+            for r in cur
+        ]
+
+
 def read_books(library_id: str) -> list[dict]:
     """Return active books for a library, keyed by URL."""
     with _conn() as conn, conn.cursor() as cur:

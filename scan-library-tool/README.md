@@ -21,6 +21,8 @@ Architecture docs: [plan file](../.kilo/plans/1779787463034-nimble-cactus.md)
 build-local-docker.sh
 docker tag komga-local:$VERSION komga-local:latest
 
+docker build -f Dockerfile -t scan-library-tool:latest .
+
 docker compose build --no-cache smart-scanner && docker compose up -d
 ```
 

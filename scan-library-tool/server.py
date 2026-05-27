@@ -1,7 +1,9 @@
 """FastAPI server — step-by-step web UI for smart scanning."""
 
+import asyncio
 import json
 import os
+import time
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
@@ -15,7 +17,7 @@ import walker
 import diff as differ
 import export_json
 from applier import generate_curl_scripts, execute_curl_script
-from config import EXPORT_DIR, SCAN_THREADS
+from config import EXPORT_DIR, HASH_CACHE, SCAN_THREADS
 from perf import ScanTimer
 
 app = FastAPI(title="Komga Smart Scanner")
@@ -117,38 +119,73 @@ async def run_scan(req: ScanRequest):
     timer.end()
     print(f"[scan] {request_id} — DB series: {len(db_series)} rows in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_series')}ms")
 
-    print(f"[scan] {request_id} — Phase: reading DB books...")
-    timer.begin("db_books")
-    db_books = database.read_books(req.library_id)
+    # 2. Query DB-only categories (unanalyzed books, missing thumbnails)
+    timer.begin("db_extra")
+    db_unanalyzed = database.read_unanalyzed_books(req.library_id)
+    db_no_thumbnail = database.read_books_missing_thumbnail(req.library_id)
     timer.end()
-    print(f"[scan] {request_id} — DB books: {len(db_books)} rows in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_books')}ms")
+    print(f"[scan] {request_id} — DB extra: {len(db_unanalyzed)} unanalyzed, {len(db_no_thumbnail)} no thumbnail in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_extra')}ms")
 
-    # 2. FS walk (with optional hashing)
-    print(f"[scan] {request_id} — Phase: walking filesystem (threads={SCAN_THREADS or 'auto'}, hash={req.hash_files})...")
-    timer.begin("fs_walk", {"hash_files": req.hash_files})
+    # 3. Load hash cache (if available)
+    if req.hash_files:
+        cached = walker.load_hash_cache(HASH_CACHE)
+        print(f"[scan] {request_id} — Hash cache: {cached} entries loaded from {HASH_CACHE}")
 
-    fs_walked = [0]
-    def _progress(current, total, dir_name=""):
-        fs_walked[0] = current
-        print(f"[scan] {request_id} — FS walk: [{current}/{total}] {dir_name}")
+    # 3. Run DB books + FS walk in parallel (independent operations)
+    print(f"[scan] {request_id} — Phase: reading DB books + walking FS in parallel "
+          f"(threads={SCAN_THREADS or 'auto'}, hash={req.hash_files})...")
 
-    fs_data = walker.walk_library(root, hash_files=req.hash_files,
-                                   max_workers=SCAN_THREADS or None,
-                                   on_progress=_progress)
-    timer.end()
-    p = next(p for p in timer.phases if p['phase']=='fs_walk')
-    print(f"[scan] {request_id} — FS walk: {len(fs_data['series'])} series, {sum(len(s['books']) for s in fs_data['series'].values())} files in {p['elapsed_ms']}ms")
+    def _read_db_books():
+        t0 = time.monotonic()
+        books = database.read_books(req.library_id)
+        elapsed_ms = round((time.monotonic() - t0) * 1000)
+        timer.record_phase("db_books", elapsed_ms)
+        print(f"[scan] {request_id} — DB books: {len(books)} rows in {elapsed_ms}ms")
+        return books
 
-    # 3. Diff
+    def _walk_fs():
+        t0 = time.monotonic()
+        fs_walked = [0]
+        _last_progress_time = [time.monotonic()]
+        _scan_start_time = time.monotonic()
+        def _progress(current, total, dir_name=""):
+            fs_walked[0] = current
+            now = time.monotonic()
+            gap = now - _last_progress_time[0]
+            elapsed_total = now - _scan_start_time
+            _last_progress_time[0] = now
+            print(f"[scan] {request_id} — FS walk: [{current}/{total}] {dir_name}  "
+                  f"(gap={gap:.1f}s, elapsed={elapsed_total:.0f}s)")
+
+        fs_data = walker.walk_library(root, hash_files=req.hash_files,
+                                       max_workers=SCAN_THREADS or None,
+                                       on_progress=_progress)
+        elapsed_ms = round((time.monotonic() - t0) * 1000)
+        timer.record_phase("fs_walk", elapsed_ms, meta={"hash_files": req.hash_files})
+        series_count = len(fs_data['series'])
+        file_count = sum(len(s['books']) for s in fs_data['series'].values())
+        print(f"[scan] {request_id} — FS walk: {series_count} series, {file_count} files in {elapsed_ms}ms")
+        return fs_data
+
+    db_task = asyncio.to_thread(_read_db_books)
+    fs_task = asyncio.to_thread(_walk_fs)
+    db_books, fs_data = await asyncio.gather(db_task, fs_task)
+    print(f"[scan] {request_id} — Parallel phase complete: db_books={len(db_books)} rows, "
+          f"fs_walk={len(fs_data['series'])} dirs")
+
+    # 4. Diff
     print(f"[scan] {request_id} — Phase: computing diff...")
     timer.begin("diff")
     d = differ.compute(db_series, db_books, fs_data)
+    d.to_be_analyzed = db_unanalyzed
+    d.no_metadata = db_no_thumbnail
     timer.end()
     print(f"[scan] {request_id} — Diff: {len(d.new_series)} new series, {len(d.deleted_series)} del series, "
           f"{len(d.new_books)} new books, {len(d.deleted_books)} del books, "
-          f"{len(d.changed_books)} changed, {len(d.pending_hash)} pending hash")
+          f"{len(d.changed_books)} changed, {len(d.pending_hash)} pending hash, "
+          f"{len(d.to_be_analyzed)} to be analyzed, {len(d.no_metadata)} no thumbnail")
 
-    # 4. Export JSONs to request_id folder
+    # 5. Export JSONs to request_id folder
     print(f"[scan] {request_id} — Phase: exporting JSONs...")
     timer.begin("export_jsons")
     paths = export_json.export_snapshots(
@@ -157,7 +194,7 @@ async def run_scan(req: ScanRequest):
     )
     timer.end()
 
-    # 5. Save diff as J3
+    # 6. Save diff as J3
     folder = os.path.join(EXPORT_DIR, request_id)
     os.makedirs(folder, exist_ok=True)
 
@@ -182,6 +219,8 @@ async def run_scan(req: ScanRequest):
             "deleted_books": _book_to_dict(d.deleted_books),
             "changed_books": _book_to_dict(d.changed_books),
             "pending_hash": _book_to_dict(d.pending_hash),
+            "to_be_analyzed": _book_to_dict(d.to_be_analyzed),
+            "no_metadata": _book_to_dict(d.no_metadata),
         },
         "_raw_diff": {
             "new_series": d.new_series,
@@ -190,6 +229,8 @@ async def run_scan(req: ScanRequest):
             "deleted_books": d.deleted_books,
             "changed_books": d.changed_books,
             "pending_hash": d.pending_hash,
+            "to_be_analyzed": d.to_be_analyzed,
+            "no_metadata": d.no_metadata,
         },
         "_raw_fs_data": fs_data,
         "_raw_db_series_by_url": {s["url"]: s for s in db_series},
@@ -199,7 +240,7 @@ async def run_scan(req: ScanRequest):
     with open(diff_path, "w") as f:
         json.dump(diff_data, f, indent=2, default=str)
 
-    # 6. Write performance log
+    # 7. Write performance log
     perf = timer.finish()
     timer.write_log(folder, perf)
 
@@ -217,6 +258,8 @@ async def run_scan(req: ScanRequest):
         "deleted_books": len(d.deleted_books),
         "changed_books": len(d.changed_books),
         "pending_hash": len(d.pending_hash),
+        "to_be_analyzed": len(d.to_be_analyzed),
+        "no_metadata": len(d.no_metadata),
     }
 
     return {
@@ -237,6 +280,8 @@ async def run_scan(req: ScanRequest):
         "has_deleted_books": len(d.deleted_books) > 0,
         "has_changed_books": len(d.changed_books) > 0,
         "has_pending_hash": len(d.pending_hash) > 0,
+        "has_to_be_analyzed": len(d.to_be_analyzed) > 0,
+        "has_no_metadata": len(d.no_metadata) > 0,
         "total_actions": sum(totals.values()),
         "perf": {
             "total_ms": perf["total_ms"],

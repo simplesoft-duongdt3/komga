@@ -62,3 +62,4 @@ secret/
 /scan-library-tool/tests/__pycache__
 /exports/
 /frontend-dist
+/scan-library-tool/pdf-hasher/target

@@ -112,6 +112,8 @@ def generate_curl_scripts(
         "deleted_books": _bld_deleted_books(diff, library_id),
         "changed_books": _bld_changed_books(diff, analyze, refresh),
         "pending_hash": _bld_pending_hash(diff),
+        "to_be_analyzed": _bld_to_be_analyzed(diff),
+        "no_metadata": _bld_no_metadata(diff),
     }
 
     scripts: dict[str, str] = {}
@@ -247,6 +249,31 @@ def _bld_changed_books(diff: Diff, analyze: bool, refresh: bool) -> list[str]:
         for sid in affected:
             lines.append(f"# Refresh series metadata: {sid}")
             lines.append(_curl_cmd("POST", f"/api/v1/series/{sid}/metadata/refresh"))
+    return lines
+
+
+def _bld_to_be_analyzed(diff: Diff) -> list[str]:
+    """Generate analyze commands for books whose MEDIA status is UNKNOWN."""
+    lines = []
+    for b in diff.to_be_analyzed:
+        lines.append(f"# Analyze: {b['name']}")
+        lines.append(_curl_cmd("POST", f"/api/v1/books/{b['id']}/analyze"))
+    return lines
+
+
+def _bld_no_metadata(diff: Diff) -> list[str]:
+    """Generate metadata refresh commands for books missing thumbnails."""
+    lines = []
+    for b in diff.no_metadata:
+        lines.append(f"# Refresh metadata: {b['name']}")
+        lines.append(_curl_cmd("POST", f"/api/v1/books/{b['id']}/metadata/refresh"))
+    affected = set()
+    for b in diff.no_metadata:
+        if b.get("series_id"):
+            affected.add(b["series_id"])
+    for sid in affected:
+        lines.append(f"# Refresh series metadata: {sid}")
+        lines.append(_curl_cmd("POST", f"/api/v1/series/{sid}/metadata/refresh"))
     return lines
 
 

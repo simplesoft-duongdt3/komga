@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import threading
 from datetime import datetime, timezone
 
 
@@ -14,17 +15,20 @@ class ScanTimer:
         self.phases: list[dict] = []
         self._current: tuple[str, float] | None = None
         self._current_meta: dict | None = None
+        self._lock = threading.Lock()
 
     def begin(self, name: str, meta: dict | None = None):
-        now = time.monotonic()
-        if self._current:
-            self._end_current(now)
-        self._current = (name, now)
-        self._current_meta = meta
+        with self._lock:
+            now = time.monotonic()
+            if self._current:
+                self._end_current(now)
+            self._current = (name, now)
+            self._current_meta = meta
 
     def end(self):
-        if self._current:
-            self._end_current(time.monotonic())
+        with self._lock:
+            if self._current:
+                self._end_current(time.monotonic())
 
     def _end_current(self, now: float):
         name, start = self._current
@@ -35,6 +39,13 @@ class ScanTimer:
             self._current_meta = None
         self.phases.append(entry)
         self._current = None
+
+    def record_phase(self, name: str, elapsed_ms: int, meta: dict | None = None):
+        with self._lock:
+            entry = {"phase": name, "elapsed_ms": elapsed_ms}
+            if meta:
+                entry["meta"] = meta
+            self.phases.append(entry)
 
     def finish(self) -> dict:
         self.end()

@@ -179,7 +179,7 @@ function renderScanResults() {
   const d = r.diff;
   const out = document.getElementById('scanResults');
 
-  const hasChanges = d.new_series + d.deleted_series + d.new_books + d.deleted_books + d.changed_books + d.pending_hash > 0;
+  const hasChanges = d.new_series + d.deleted_series + d.new_books + d.deleted_books + d.changed_books + d.pending_hash + d.to_be_analyzed + d.no_metadata > 0;
 
   // Build timing table
   const perf = r.perf || {};
@@ -213,6 +213,8 @@ function renderScanResults() {
           ${row('Deleted books', d.deleted_books, d.deleted_books > 0 ? 'text-red-500' : '')}
           ${row('Changed books', d.changed_books, d.changed_books > 0 ? 'text-yellow-500' : '')}
           ${row('Hash book (needs hash)', d.pending_hash, d.pending_hash > 0 ? 'text-purple-500' : '')}
+          ${row('To be analyzed', d.to_be_analyzed, d.to_be_analyzed > 0 ? 'text-orange-500' : '')}
+          ${row('No metadata/thumbnail', d.no_metadata, d.no_metadata > 0 ? 'text-orange-500' : '')}
         </tbody>
         <tfoot><tr class="border-t border-gray-300 dark:border-gray-600 font-semibold">
           <td class="py-1">Total</td><td class="text-right py-1">${r.total_actions}</td>
@@ -269,6 +271,8 @@ function renderStep3() {
     {key: 'deleted_books', label: 'Deleted books', on: r.has_deleted_books},
     {key: 'changed_books', label: 'Changed books', on: r.has_changed_books},
     {key: 'pending_hash', label: 'Hash book (update DB hash via analyze)', on: r.has_pending_hash},
+    {key: 'to_be_analyzed', label: 'Analyze books (MEDIA=UNKNOWN)', on: r.has_to_be_analyzed},
+    {key: 'no_metadata', label: 'Refresh metadata (no thumbnail)', on: r.has_no_metadata},
   ];
 
   const checkboxes = cats.map(c => `

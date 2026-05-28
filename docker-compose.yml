@@ -55,22 +55,8 @@ services:
       - /Users/duong/Documents/data-komga:/data:ro
     restart: unless-stopped
 
-  pdf-hasher:
-    build:
-      context: ./scan-library-tool
-      dockerfile: Dockerfile.hasher
-    container_name: komga-pdf-hasher
-    profiles:
-      - hasher
-    volumes:
-      - /Users/duong/Documents/data-komga:/data:ro
-      - ./exports:/exports
-    # docker compose run --rm pdf-hasher --root /data --cache /exports/hashes.json -j 4
-
   smart-scanner:
-    build:
-      context: ./scan-library-tool
-      dockerfile: Dockerfile
+    image: scan-library-tool:latest
     container_name: komga-smart-scanner
     depends_on:
       postgres:
@@ -91,7 +77,8 @@ services:
       DRY_RUN: "false"
       PORT: "5050"
       SCAN_THREADS: ${SCAN_THREADS:-0}
-      HASH_CACHE: /exports/hashes.json
+      HASH_CACHE_DIR: /exports
+      HASHER_THREADS: "4"
     volumes:
       - /Users/duong/Documents/data-komga:/data:ro
       - ./exports:/exports

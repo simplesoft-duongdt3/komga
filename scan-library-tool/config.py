@@ -14,5 +14,6 @@ DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 MAX_API_RETRIES = int(os.getenv("MAX_API_RETRIES", "3"))
 EXPORT_DIR = os.getenv("EXPORT_DIR", "/exports")
 SCAN_THREADS = int(os.getenv("SCAN_THREADS", "0"))
-HASH_CACHE = os.getenv("HASH_CACHE", "/exports/hashes.json")
+HASH_CACHE_DIR = os.getenv("HASH_CACHE_DIR", "/exports")
+HASHER_THREADS = int(os.getenv("HASHER_THREADS", "4"))
 

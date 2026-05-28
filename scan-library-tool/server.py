@@ -3,8 +3,11 @@
 import asyncio
 import json
 import os
+import re
+import subprocess
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
@@ -17,7 +20,7 @@ import walker
 import diff as differ
 import export_json
 from applier import generate_curl_scripts, execute_curl_script
-from config import EXPORT_DIR, HASH_CACHE, SCAN_THREADS
+from config import EXPORT_DIR, HASH_CACHE_DIR, HASHER_THREADS, SCAN_THREADS
 from perf import ScanTimer
 
 app = FastAPI(title="Komga Smart Scanner")
@@ -66,6 +69,18 @@ class CurlRequest(BaseModel):
 class ExecuteRequest(BaseModel):
     request_id: str
     script_name: str
+
+class HashCacheRequest(BaseModel):
+    threads: int | None = None
+
+
+# ── Global concurrency guard ──────────────────────────────
+
+_generating_libs: set[str] = set()
+
+# Library root cache: library_id -> (root_path, timestamp)
+_library_root_cache: dict[str, tuple[str, float]] = {}
+_LIBRARY_CACHE_TTL = 300  # 5 minutes
 
 
 # ── API: list libraries ────────────────────────────────────
@@ -126,10 +141,11 @@ async def run_scan(req: ScanRequest):
     timer.end()
     print(f"[scan] {request_id} — DB extra: {len(db_unanalyzed)} unanalyzed, {len(db_no_thumbnail)} no thumbnail in {next(p['elapsed_ms'] for p in timer.phases if p['phase']=='db_extra')}ms")
 
-    # 3. Load hash cache (if available)
+    # 3. Load hash cache (if available) — one cache file per library
     if req.hash_files:
-        cached = walker.load_hash_cache(HASH_CACHE)
-        print(f"[scan] {request_id} — Hash cache: {cached} entries loaded from {HASH_CACHE}")
+        cache_file = os.path.join(HASH_CACHE_DIR, f"hashes-{req.library_id}.json")
+        cached = walker.load_hash_cache(cache_file)
+        print(f"[scan] {request_id} — Hash cache: {cached} entries loaded from {cache_file}")
 
     # 3. Run DB books + FS walk in parallel (independent operations)
     print(f"[scan] {request_id} — Phase: reading DB books + walking FS in parallel "
@@ -380,6 +396,204 @@ async def download_file(request_id: str, filename: str):
     if not os.path.isfile(abs_path):
         raise HTTPException(404, "File not found")
     return FileResponse(abs_path)
+
+
+# ── Hash cache helpers ────────────────────────────────────
+
+def _resolve_library_root(library_id: str) -> str:
+    now = time.monotonic()
+    cached = _library_root_cache.get(library_id)
+    if cached and (now - cached[1]) < _LIBRARY_CACHE_TTL:
+        return cached[0]
+    libs = api.list_libraries()
+    lib = next((l for l in libs if l["id"] == library_id), None)
+    if not lib:
+        raise HTTPException(404, "Library not found")
+    root = lib.get("root", "")
+    if root.lower().startswith("file://"):
+        root = urlparse(root).path
+    if not root:
+        raise HTTPException(400, "Library root is empty")
+    if not os.path.isabs(root):
+        raise HTTPException(400, f"Library root is not an absolute path: {root}")
+    _library_root_cache[library_id] = (root, now)
+    return root
+
+
+def _get_library_cache_path(library_id: str) -> tuple[str, str]:
+    root = _resolve_library_root(library_id)
+    cache_path = os.path.join(HASH_CACHE_DIR, f"hashes-{library_id}.json")
+    return root, cache_path
+
+
+def _parse_hash_stat(line: str) -> dict | None:
+    m = re.search(r"Found (\d+) .pdf files", line)
+    if m:
+        return {"key": "total_files", "value": int(m.group(1))}
+    m = re.search(r"Status: (\d+) skip.*? (\d+) new, (\d+) changed", line)
+    if m:
+        return {"key": "status", "value": {"skip": int(m.group(1)), "new": int(m.group(2)), "changed": int(m.group(3))}}
+    m = re.search(r"Stale entries removed: (\d+)", line)
+    if m:
+        return {"key": "stale", "value": int(m.group(1))}
+    m = re.search(r"Cache written to .+ \((\d+) entries", line)
+    if m:
+        return {"key": "entries_written", "value": int(m.group(1))}
+    m = re.search(r"Total: (\d+) files,.*?(\d+\.\d+)s", line)
+    if m:
+        return {"key": "total_summary", "value": {"files": int(m.group(1)), "elapsed_secs": float(m.group(2))}}
+    return None
+
+
+# ── API: hash cache summary ────────────────────────────────
+
+@app.get("/api/hash-cache/{library_id}")
+async def get_hash_cache(library_id: str):
+    try:
+        root, cache_path = _get_library_cache_path(library_id)
+    except HTTPException:
+        raise
+
+    if not os.path.isfile(cache_path):
+        return {"exists": False}
+
+    stat = os.stat(cache_path)
+    info = {
+        "exists": True,
+        "path": cache_path,
+        "file_size_bytes": stat.st_size,
+        "library_root": root,
+    }
+
+    try:
+        with open(cache_path) as f:
+            data = json.load(f)
+        info["total_files"] = data.get("total_files", 0)
+        info["total_bytes"] = data.get("total_bytes", 0)
+        ts = data.get("generated_at_unix_secs", 0)
+        if ts:
+            try:
+                info["generated_at"] = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            except (OSError, OverflowError):
+                pass
+        info["elapsed_secs"] = data.get("elapsed_secs", 0)
+    except (json.JSONDecodeError, OSError):
+        pass
+
+    return info
+
+
+# ── API: hash cache download ───────────────────────────────
+
+@app.get("/api/hash-cache/{library_id}/download")
+async def download_hash_cache(library_id: str):
+    try:
+        _, cache_path = _get_library_cache_path(library_id)
+    except HTTPException:
+        raise
+
+    abs_path = os.path.normpath(cache_path)
+    allowed_dir = os.path.normpath(HASH_CACHE_DIR)
+    if not abs_path.startswith(allowed_dir):
+        raise HTTPException(403, "Forbidden")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(404, "Cache file not found")
+    return FileResponse(abs_path, filename=os.path.basename(abs_path))
+
+
+# ── API: generate hash cache (SSE) ─────────────────────────
+
+@app.post("/api/hash-cache/{library_id}")
+async def generate_hash_cache(library_id: str, req: HashCacheRequest | None = None):
+    if library_id in _generating_libs:
+        raise HTTPException(409, "Hash generation already in progress for this library")
+
+    root, cache_path = _get_library_cache_path(library_id)
+    threads = max(1, req.threads if req and req.threads else HASHER_THREADS)
+
+    async def event_stream():
+        try:
+            _generating_libs.add(library_id)
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+            def _reader(proc: subprocess.Popen):
+                try:
+                    for raw_line in iter(proc.stdout.readline, ""):
+                        queue.put_nowait(raw_line)
+                finally:
+                    proc.stdout.close()
+                    ret = proc.wait()
+                    queue.put_nowait(f"__EXIT_{ret}__")
+                    queue.put_nowait(None)
+
+            try:
+                proc = subprocess.Popen(
+                    ["pdf-hasher", "--root", root, "--cache", cache_path, "-j", str(threads)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                )
+            except FileNotFoundError:
+                yield f"data: {json.dumps({'event': 'done', 'success': False, 'error': 'pdf-hasher binary not found'})}\n\n"
+                return
+
+            reader_task = asyncio.get_event_loop().run_in_executor(None, _reader, proc)
+
+            while True:
+                try:
+                    line = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
+
+                if line is None:
+                    break
+
+                if line.startswith("__EXIT_"):
+                    exit_code = int(line.removeprefix("__EXIT_").removesuffix("__"))
+                    success = exit_code == 0
+                    payload = {"event": "done", "success": success}
+                    if success:
+                        try:
+                            if os.path.isfile(cache_path):
+                                st = os.stat(cache_path)
+                                payload["file_size_bytes"] = st.st_size
+                            payload["generated_at"] = datetime.now(tz=timezone.utc).isoformat()
+                        except OSError:
+                            pass
+                    else:
+                        payload["error"] = f"Process exited with code {exit_code}"
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    break
+
+                line = line.rstrip("\n\r")
+                if not line:
+                    continue
+
+                stat = _parse_hash_stat(line)
+                if stat:
+                    yield f"data: {json.dumps({'event': 'stat', **stat})}\n\n"
+
+                if "Walking directory" in line or "Walking" in line:
+                    yield f"data: {json.dumps({'event': 'phase', 'phase': 'walking'})}\n\n"
+                elif "Classifying" in line:
+                    yield f"data: {json.dumps({'event': 'phase', 'phase': 'classifying'})}\n\n"
+                elif "Hashing" in line and "Cache" not in line and "Total" not in line:
+                    yield f"data: {json.dumps({'event': 'phase', 'phase': 'hashing'})}\n\n"
+                elif "Cache written" in line or "Writing cache" in line:
+                    yield f"data: {json.dumps({'event': 'phase', 'phase': 'writing'})}\n\n"
+
+                yield f"data: {json.dumps({'event': 'progress', 'line': line})}\n\n"
+
+            await reader_task
+        finally:
+            _generating_libs.discard(library_id)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── Main ────────────────────────────────────────────────────

@@ -80,7 +80,7 @@ The tool runs a web server at port 5050 using [FuncToWeb](https://github.com/off
 
 | Option | Default | Description |
 |---|---|---|
-| 🔐 **Compute file hashes** | `False` | SHA-256 hash each PDF file. Slower but detects content changes even when mtime/size match. |
+| 🔐 **Compute file hashes** | `True` | XXH3_128 hash each PDF file via pre-computed Rust cache (see pdf-hasher below). Slower without cache. |
 
 ### Per-action options
 
@@ -184,6 +184,42 @@ Run the script: `bash /exports/file.sh`
 └───────────────┘
 ```
 
+## PDF Hash Cache
+
+An incremental Rust CLI (`pdf-hasher`) pre-computes XXH3_128 hashes for every
+`.pdf` in a library root. The result is cached to a JSON file; subsequent runs
+only hash new or modified files. The Python scanner reads this cache to skip
+inline hash computation.
+
+A separate cache file is maintained per library as `hashes-{library_id}.json`
+in the `HASH_CACHE_DIR` directory.
+
+### Workflow
+
+```bash
+# 1. Build the smart-scanner image (includes Rust binary)
+docker compose build smart-scanner
+
+# 2. Find library IDs from the scanner UI or Komga API
+#    They are UUIDs like "a1b2c3d4-e5f6-..."
+
+# 3. First run — full population for a library
+docker compose run --rm smart-scanner pdf-hasher \
+  --root /data --cache /exports/hashes-<lib-id>.json -j 4
+
+# 4. Smart-scanner picks up the cache automatically
+#    Log shows: "Hash cache: 500000 entries loaded from /exports/hashes-<lib-id>.json"
+
+# 5. After adding/modifying files, update cache:
+docker compose run --rm smart-scanner pdf-hasher \
+  --root /data --cache /exports/hashes-<lib-id>.json -j 4
+# → "Status: 499988 skip, 10 new, 2 changed — 12 to hash"
+```
+
+The Rust binary (`pdf-hasher`) is built into the `smart-scanner` image
+via multi-stage build. The source is at `scan-library-tool/pdf-hasher/`.
+Both the hasher and the Python scanner share `HASH_CACHE_DIR` (`/exports`).
+
 The tool reads PostgreSQL directly for the current DB state and walks the
 filesystem for the current disk state. All mutations go through the Komga
 REST API — no DB writes from Python.
@@ -230,3 +266,4 @@ PYTHONPATH=. python3 -m unittest tests.test_walker tests.test_diff -v
 | `PORT` | `5050` | Web server port |
 | `EXPORT_DIR` | `/exports` | JSON + curl export directory |
 | `DRY_RUN` | `false` | Preview only (no API calls) |
+| `HASH_CACHE_DIR` | `/exports` | Directory for per-library hash cache files (`hashes-{library_id}.json`) |

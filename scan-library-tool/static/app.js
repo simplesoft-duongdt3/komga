@@ -7,6 +7,7 @@ const API = {
   execute: '/api/execute',
   listRequests: '/api/list-requests',
   exports: '/api/exports',
+  hashCache: '/api/hash-cache',
 };
 
 const state = {
@@ -17,6 +18,11 @@ const state = {
   curlResult: null,
   requestId: null,
   curlEnabled: {},
+  hashPanel: null,
+  hashCacheInfo: {},
+  hashGenerating: false,
+  hashLog: [],
+  hashStats: {},
 };
 
 /* ── Helpers ───────────────────────────────────────────── */
@@ -110,6 +116,10 @@ async function renderStep1() {
       <div class="font-semibold">${esc(l.name)}</div>
       <div class="text-xs text-gray-400 mt-1">${esc(l.id)}</div>
       <div class="text-xs text-gray-400 truncate">${esc(l.root || '(no root)')}</div>
+      <button onclick="event.stopPropagation(); openHashPanel('${esc(l.id)}')"
+              class="mt-2 px-3 py-1 text-xs rounded bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-800">
+        ⚡ Hash Cache
+      </button>
     </div>
   `).join('');
 
@@ -126,6 +136,247 @@ function selectLibrary(id) {
   state.requestId = null;
   state.step = 2;
   render();
+}
+
+/* ── Hash Cache Panel ──────────────────────────────────── */
+
+function openHashPanel(libraryId) {
+  state.hashPanel = state.hashPanel === libraryId ? null : libraryId;
+  if (state.hashPanel) {
+    state.hashCacheInfo[libraryId] = null;
+    state.hashLog = [];
+    state.hashStats = {};
+    renderHashPanel(libraryId);
+    loadHashCacheStatus(libraryId);
+  } else {
+    closeHashPanel();
+  }
+}
+
+function closeHashPanel() {
+  const el = document.getElementById('hashPanel');
+  if (el) el.remove();
+  state.hashPanel = null;
+}
+
+async function loadHashCacheStatus(libraryId) {
+  try {
+    const info = await fetchJSON(`${API.hashCache}/${libraryId}`);
+    state.hashCacheInfo[libraryId] = info;
+    renderHashPanel(libraryId);
+  } catch (e) {
+    state.hashCacheInfo[libraryId] = { error: e.message };
+    renderHashPanel(libraryId);
+  }
+}
+
+function renderHashPanel(libraryId) {
+  const lib = state.libraries.find(l => l.id === libraryId);
+  if (!lib) return;
+
+  let existing = document.getElementById('hashPanel');
+  if (!existing) {
+    existing = document.createElement('div');
+    existing.id = 'hashPanel';
+    document.getElementById('stepContent').appendChild(existing);
+  }
+
+  const info = state.hashCacheInfo[libraryId];
+  const generating = state.hashGenerating;
+  const logLines = state.hashLog;
+  const stats = state.hashStats;
+
+  let statusHtml = '';
+  let actionsHtml = '';
+
+  if (!info) {
+    statusHtml = '<div class="text-gray-400 text-sm">Loading...</div>';
+  } else if (info.error) {
+    statusHtml = `<div class="text-red-400 text-sm">Error: ${esc(info.error)}</div>`;
+  } else if (info.exists) {
+    const age = info.generated_at ? new Date(info.generated_at).toLocaleString() : 'unknown';
+    const size = info.file_size_bytes ? fmtBytes(info.file_size_bytes) : 'unknown';
+    const files = info.total_files != null ? info.total_files.toLocaleString() : '?';
+    statusHtml = `
+      <div class="text-xs space-y-1">
+        <div><span class="text-gray-400">Status:</span> <span class="text-green-400">✅ Cached</span></div>
+        <div><span class="text-gray-400">Generated:</span> ${esc(age)}</div>
+        <div><span class="text-gray-400">Files:</span> ${files}</div>
+        <div><span class="text-gray-400">Cache file:</span> ${size}</div>
+      </div>`;
+    actionsHtml = `
+      <div class="flex gap-2 mt-2">
+        <button onclick="generateHashCache('${esc(libraryId)}')" ${generating ? 'disabled' : ''}
+                class="px-3 py-1 text-xs rounded font-semibold ${generating ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600 text-white'}">
+          ${generating ? spinner() + ' Generating...' : '🔄 Regenerate Cache'}
+        </button>
+        <a href="${API.hashCache}/${libraryId}/download" target="_blank"
+           class="px-3 py-1 text-xs rounded font-semibold bg-blue-600 hover:bg-blue-700 text-white inline-block">📥 Download Cache</a>
+      </div>`;
+  } else {
+    statusHtml = `
+      <div class="text-xs space-y-1">
+        <div><span class="text-gray-400">Status:</span> <span class="text-yellow-400">⚠️ No cache</span></div>
+        <div class="text-gray-400">Generate one to speed up future scans.</div>
+      </div>`;
+    actionsHtml = `
+      <div class="flex gap-2 mt-2">
+        <button onclick="generateHashCache('${esc(libraryId)}')" ${generating ? 'disabled' : ''}
+                class="px-3 py-1 text-xs rounded font-semibold ${generating ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 text-white'}">
+          ${generating ? spinner() + ' Generating...' : '⚡ Generate Cache'}
+        </button>
+      </div>`;
+  }
+
+  const progressHtml = `
+    <div class="mt-2 bg-gray-900 text-green-400 text-xs font-mono p-2 rounded max-h-40 overflow-y-auto ${logLines.length === 0 && !generating ? 'hidden' : ''}" id="hashLog">
+      ${logLines.map(l => esc(l)).join('\n')}
+    </div>`;
+
+  const statHtml = Object.keys(stats).length > 0 ? `
+    <div class="mt-2 text-xs grid grid-cols-2 gap-1" id="hashStatGrid">
+      ${Object.entries(stats).map(([k, v]) => `<div><span class="text-gray-400">${esc(k.replace(/_/g, ' '))}:</span> <span class="stat-value">${_renderStatValue(v)}</span></div>`).join('')}
+    </div>` : '<div class="mt-2 text-xs grid grid-cols-2 gap-1 hidden" id="hashStatGrid"></div>';
+
+  existing.innerHTML = `
+    <div class="border border-purple-300 dark:border-purple-700 rounded-lg p-4 mt-3 bg-purple-50 dark:bg-purple-900/30">
+      <div class="flex items-center justify-between mb-2">
+        <div class="font-semibold text-sm">⚡ Hash Cache — ${esc(lib.name)}</div>
+        <button onclick="closeHashPanel()" class="text-gray-400 hover:text-gray-200 text-sm">✕</button>
+      </div>
+      ${statusHtml}
+      ${statHtml}
+      ${actionsHtml}
+      ${progressHtml}
+    </div>
+  `;
+
+  if (logLines.length > 0) {
+    const logEl = document.getElementById('hashLog');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function appendHashLog(line) {
+  state.hashLog.push(line);
+  if (state.hashLog.length > 50) {
+    state.hashLog = state.hashLog.slice(-50);
+  }
+  const logEl = document.getElementById('hashLog');
+  if (logEl) {
+    logEl.classList.remove('hidden');
+    logEl.insertAdjacentHTML('beforeend', esc(line) + '\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function _renderStatValue(v) {
+  if (typeof v === 'object' && v !== null) {
+    return Object.entries(v).map(([k, val]) => `${esc(k)}: ${esc(String(val))}`).join(', ');
+  }
+  return esc(String(v));
+}
+
+function updateHashStat(key, value) {
+  state.hashStats[key] = value;
+  const grid = document.getElementById('hashStatGrid');
+  if (!grid) return;
+  grid.classList.remove('hidden');
+  const attrVal = 'stat-' + key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  let row = grid.querySelector(`[data-skey="${attrVal}"]`);
+  if (row) {
+    const valEl = row.querySelector('.sv');
+    if (valEl) valEl.textContent = _renderStatValue(value);
+  } else {
+    const label = key.replace(/_/g, ' ');
+    const display = _renderStatValue(value);
+    grid.insertAdjacentHTML('beforeend',
+      `<div><span class="text-gray-400">${esc(label)}:</span> <span class="sv" data-skey="${attrVal}">${display}</span></div>`);
+  }
+}
+
+async function generateHashCache(libraryId) {
+  if (state.hashGenerating) return;
+  state.hashGenerating = true;
+  state.hashLog = [];
+  state.hashStats = {};
+  renderHashPanel(libraryId);
+
+  try {
+    const resp = await fetch(`${API.hashCache}/${libraryId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith(':') && line.includes('heartbeat')) continue;
+        if (line.startsWith('data: ')) {
+          try {
+            const evt = JSON.parse(line.slice(6));
+            handleHashEvent(evt, libraryId);
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (e) {
+    appendHashLog(`ERROR: ${e.message}`);
+  } finally {
+    state.hashGenerating = false;
+    renderHashPanel(libraryId);
+  }
+}
+
+function handleHashEvent(evt, libraryId) {
+  switch (evt.event) {
+    case 'phase':
+      appendHashLog(`── Phase: ${evt.phase} ──`);
+      break;
+    case 'progress':
+      appendHashLog(evt.line);
+      break;
+    case 'stat':
+      updateHashStat(evt.key, evt.value);
+      break;
+    case 'done':
+      if (evt.success) {
+        if (evt.file_size_bytes || evt.generated_at) {
+          const cur = state.hashCacheInfo[libraryId] || {};
+          state.hashCacheInfo[libraryId] = Object.assign(cur, {
+            exists: true,
+            file_size_bytes: evt.file_size_bytes || cur.file_size_bytes,
+            generated_at: evt.generated_at || cur.generated_at,
+          });
+        }
+        appendHashLog('✅ Hash cache generation complete.');
+      } else {
+        appendHashLog(`❌ Failed: ${evt.error || 'Unknown error'}`);
+      }
+      break;
+  }
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+  return (bytes / 1073741824).toFixed(2) + ' GB';
 }
 
 /* ── Step 2: Scan ──────────────────────────────────────── */

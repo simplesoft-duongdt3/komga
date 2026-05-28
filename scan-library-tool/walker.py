@@ -21,12 +21,13 @@ _HASH_CACHE: dict[str, str] | None = None
 def load_hash_cache(path: str | None = None) -> int:
     """Load the Rust-generated XXH3_128 hash cache.
 
-    Set env HASH_CACHE or pass path directly. No-op if file doesn't exist.
+    Pass path directly. No-op if file doesn't exist. The env var HASH_CACHE_DIR
+    is used only as a fallback when path is None (for CLI usage).
     Returns number of entries loaded (0 if cache not found or corrupted).
     """
     global _HASH_CACHE
     if path is None:
-        path = os.environ.get("HASH_CACHE", "")
+        path = os.environ.get("HASH_CACHE_DIR", "")
     if not path or not os.path.isfile(path):
         return 0
     try:

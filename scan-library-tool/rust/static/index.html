@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Komga Smart Scanner</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { darkMode: 'class' }
+if (localStorage.getItem('theme') === 'light') document.documentElement.classList.remove('dark');
+</script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
+<div class="max-w-5xl mx-auto px-4 py-6">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-bold">Komga Smart Scanner</h1>
+    <button onclick="toggleTheme()" class="text-sm px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600">🌓</button>
+  </div>
+
+  <!-- Step indicator -->
+  <div id="stepIndicator" class="flex items-center justify-center gap-2 mb-8 text-sm"></div>
+
+  <!-- Content area -->
+  <div id="stepContent"></div>
+
+  <!-- Footer -->
+  <div id="statusBar" class="mt-6 text-center text-xs text-gray-400"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

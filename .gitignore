@@ -58,9 +58,10 @@ application-oauth2.yml
 ### Conveyor
 output/
 secret/
-/scan-library-tool/__pycache__
-/scan-library-tool/tests/__pycache__
+/scan-library-tool/python/__pycache__
+/scan-library-tool/python/tests/__pycache__
 /exports/
 /frontend-dist
-/scan-library-tool/pdf-hasher/target
+/scan-library-tool/python/pdf-hasher/target
+/scan-library-tool/rust/target
 .DS_Store

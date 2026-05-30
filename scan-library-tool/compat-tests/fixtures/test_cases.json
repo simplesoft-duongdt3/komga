@@ -1,0 +1,223 @@
+{
+  "normalize_url": [
+    {"input": "file:/data/library-sample/sample-series/", "expected": "file:///data/library-sample/sample-series"},
+    {"input": "file:/data/library-sample/sample-series", "expected": "file:///data/library-sample/sample-series"},
+    {"input": "file:///data/library-sample/sample-series", "expected": "file:///data/library-sample/sample-series"},
+    {"input": "file:///data/library-sample/sample-series/", "expected": "file:///data/library-sample/sample-series"},
+    {"input": "file:/data/library-sample/sample-series/sample_random_cool.pdf", "expected": "file:///data/library-sample/sample-series/sample_random_cool.pdf"},
+    {"input": "file:///data/library-sample/sample-series/sample_random_cool.pdf", "expected": "file:///data/library-sample/sample-series/sample_random_cool.pdf"},
+    {"input": "http://example.com", "expected": "http://example.com"},
+    {"input": "file://localhost/data/foo", "expected": "file:///localhost/data/foo"}
+  ],
+  "mtime_equals": [
+    {"fs": "2026-05-26T10:25:23.774395+00:00", "db": "2026-05-26T10:25:24", "expected": false},
+    {"fs": "2026-01-01T12:00:00.123456+00:00", "db": "2026-01-01T12:00:00", "expected": true},
+    {"fs": "2026-01-01T12:00:00", "db": "2026-01-01T12:00:00", "expected": true},
+    {"fs": "2026-01-01T12:00:00", "db": "2026-01-01T12:00:01", "expected": false},
+    {"fs": "", "db": "2026-01-01T12:00:00", "expected": null},
+    {"fs": "2026-01-01T12:00:00Z", "db": "2026-01-01T12:00:00", "expected": true}
+  ],
+  "diff": [
+    {
+      "name": "no_changes",
+      "db_series": [
+        {"id": "s1", "name": "Series A", "url": "file:///root/SeriesA", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/SeriesA/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/SeriesA": {
+          "url": "file:///root/SeriesA", "name": "Series A",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/SeriesA/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
+    },
+    {
+      "name": "new_series",
+      "db_series": [],
+      "db_books": [],
+      "fs_series": {
+        "file:///root/SeriesA": {
+          "url": "file:///root/SeriesA", "name": "Series A",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/SeriesA/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 1, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
+    },
+    {
+      "name": "deleted_series",
+      "db_series": [
+        {"id": "s1", "name": "Series A", "url": "file:///root/SeriesA", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/SeriesA/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {},
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 1, "new_books": 0, "deleted_books": 1, "changed_books": 0, "pending_hash": 0}
+    },
+    {
+      "name": "new_book_in_existing_series",
+      "db_series": [
+        {"id": "s1", "name": "Series A", "url": "file:///root/SeriesA", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/SeriesA/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/SeriesA": {
+          "url": "file:///root/SeriesA", "name": "Series A",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/SeriesA/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00"},
+            {"url": "file:///root/SeriesA/Ch02.pdf", "name": "Ch02", "file_size": 2000, "file_last_modified": "2026-01-02T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 1, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
+    },
+    {
+      "name": "changed_book_different_mtime",
+      "db_series": [
+        {"id": "s1", "name": "S", "url": "file:///root/S", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/S": {
+          "url": "file:///root/S", "name": "S",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/S/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-02-01T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 1, "pending_hash": 0}
+    },
+    {
+      "name": "changed_book_different_size",
+      "db_series": [
+        {"id": "s1", "name": "S", "url": "file:///root/S", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/S": {
+          "url": "file:///root/S", "name": "S",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/S/Ch01.pdf", "name": "Ch01", "file_size": 2000, "file_last_modified": "2026-01-01T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 1, "pending_hash": 0}
+    },
+    {
+      "name": "changed_book_different_hash",
+      "db_series": [
+        {"id": "s1", "name": "S", "url": "file:///root/S", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "aaaa", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/S": {
+          "url": "file:///root/S", "name": "S",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/S/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00", "file_hash": "bbbb"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 1, "pending_hash": 0}
+    },
+    {
+      "name": "no_change_hash_matches",
+      "db_series": [
+        {"id": "s1", "name": "S", "url": "file:///root/S", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "xxhash123", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/S": {
+          "url": "file:///root/S", "name": "S",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/S/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-02-02T00:00:00+00:00", "file_hash": "xxhash123"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
+    },
+    {
+      "name": "pending_hash_fs_has_db_empty",
+      "db_series": [
+        {"id": "s1", "name": "S", "url": "file:///root/S", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "Ch01", "url": "file:///root/S/Ch01.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///root/S": {
+          "url": "file:///root/S", "name": "S",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///root/S/Ch01.pdf", "name": "Ch01", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00", "file_hash": "xxhash"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 0, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 1}
+    },
+    {
+      "name": "integration_java_urls",
+      "db_series": [
+        {"id": "s1", "name": "sample-series", "url": "file:/data/library-sample/sample-series/", "file_last_modified": "2026-01-01T00:00:00+00:00"}
+      ],
+      "db_books": [
+        {"id": "b1", "name": "sample_random_cool", "url": "file:/data/library-sample/sample-series/sample_random_cool.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 1000, "file_hash": "", "series_id": "s1"},
+        {"id": "b2", "name": "sample_random_sage", "url": "file:/data/library-sample/sample-series/sample_random_sage.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 2000, "file_hash": "", "series_id": "s1"},
+        {"id": "b3", "name": "sample_random_warm", "url": "file:/data/library-sample/sample-series/sample_random_warm.pdf", "file_last_modified": "2026-01-01T00:00:00+00:00", "file_size": 3000, "file_hash": "", "series_id": "s1"}
+      ],
+      "fs_series": {
+        "file:///data/library-sample/sample-series": {
+          "url": "file:///data/library-sample/sample-series", "name": "sample-series",
+          "file_last_modified": "2026-01-01T00:00:00+00:00",
+          "books": [
+            {"url": "file:///data/library-sample/sample-series/sample_random_cool.pdf", "name": "sample_random_cool", "file_size": 1000, "file_last_modified": "2026-01-01T00:00:00+00:00"},
+            {"url": "file:///data/library-sample/sample-series/sample_random_sage.pdf", "name": "sample_random_sage", "file_size": 2000, "file_last_modified": "2026-01-01T00:00:00+00:00"},
+            {"url": "file:///data/library-sample/sample-series/sample_random_warm.pdf", "name": "sample_random_warm", "file_size": 3000, "file_last_modified": "2026-01-01T00:00:00+00:00"}
+          ]
+        },
+        "file:///data/library-sample/sample-series-2": {
+          "url": "file:///data/library-sample/sample-series-2", "name": "sample-series-2",
+          "file_last_modified": "2026-01-02T00:00:00+00:00",
+          "books": [
+            {"url": "file:///data/library-sample/sample-series-2/sample_random_cool.pdf", "name": "sample_random_cool", "file_size": 1000, "file_last_modified": "2026-01-02T00:00:00+00:00"},
+            {"url": "file:///data/library-sample/sample-series-2/sample_random_sage.pdf", "name": "sample_random_sage", "file_size": 2000, "file_last_modified": "2026-01-02T00:00:00+00:00"}
+          ]
+        }
+      },
+      "fs_oneshots": [],
+      "expected": {"new_series": 1, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
+    }
+  ]
+}

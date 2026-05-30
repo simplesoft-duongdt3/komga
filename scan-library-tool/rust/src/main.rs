@@ -276,7 +276,67 @@ fn run_compat_test(fixtures_path: &Path) -> Result<(), Box<dyn std::error::Error
         output["diff"] = serde_json::json!(results);
     }
 
-    // Summary
+    // xxh3_128 tests
+    if let Some(cases) = fixtures.get("xxh3_128").and_then(|v| v.as_array()) {
+        let results: Vec<serde_json::Value> = cases.iter().enumerate().map(|(i, case)| {
+            let data: Vec<u8> = if let Some(input) = case.get("input").and_then(|v| v.as_str()) {
+                input.as_bytes().to_vec()
+            } else if let Some(hex) = case.get("input-hex").and_then(|v| v.as_str()) {
+                hex::decode(hex).unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let expected = case["expected"].as_str().unwrap_or("");
+            let actual = format!("{:032x}", xxhash_rust::xxh3::xxh3_128(&data));
+            let ok = actual == expected;
+            let label = case.get("desc").or_else(|| case.get("input")).and_then(|v| v.as_str()).unwrap_or("");
+            serde_json::json!({
+                "index": i, "input": label, "expected": expected, "actual": actual, "pass": ok
+            })
+        }).collect();
+        output["xxh3_128"] = serde_json::json!(results);
+    }
+
+    // hash_cache tests
+    if let Some(cases) = fixtures.get("hash_cache").and_then(|v| v.as_array()) {
+        let results: Vec<serde_json::Value> = cases.iter().enumerate().map(|(i, case)| {
+            let name = case["name"].as_str().unwrap_or("");
+            let cache_json = serde_json::to_string(&case["cache"]).unwrap_or_default();
+            let parsed: Result<crate::models::HashCache, _> = serde_json::from_str(&cache_json);
+            let (actual, ok) = match parsed {
+                Ok(hc) => {
+                    let mut entries: Vec<_> = hc.entries.iter().collect();
+                    entries.sort_by(|a, b| a.0.cmp(b.0));
+                    let first_hash = entries.first().map(|(_, e)| e.hash.clone()).unwrap_or_default();
+                    let first_size = entries.first().map(|(_, e)| e.size).unwrap_or(0);
+                    let last_hash = entries.last().map(|(_, e)| e.hash.clone()).unwrap_or_default();
+                    let actual = serde_json::json!({
+                        "total_files": hc.total_files,
+                        "total_bytes": hc.total_bytes,
+                        "root": hc.root,
+                        "entry_count": hc.entries.len(),
+                        "first_entry_hash": first_hash,
+                        "first_entry_size": first_size,
+                        "last_entry_hash": last_hash,
+                    });
+                    let checks = &case["checks"];
+                    let ok = checks["total_files"] == actual["total_files"]
+                        && checks["total_bytes"] == actual["total_bytes"]
+                        && checks["root"] == actual["root"]
+                        && checks["entry_count"] == actual["entry_count"]
+                        && checks["first_entry_hash"] == actual["first_entry_hash"]
+                        && checks["first_entry_size"] == actual["first_entry_size"]
+                        && checks["last_entry_hash"] == actual["last_entry_hash"];
+                    (actual, ok)
+                }
+                Err(e) => {
+                    (serde_json::json!({"error": e.to_string()}), false)
+                }
+            };
+            serde_json::json!({"index": i, "name": name, "checks": case["checks"], "actual": actual, "pass": ok })
+        }).collect();
+        output["hash_cache"] = serde_json::json!(results);
+    }
     let all_results: Vec<&serde_json::Value> = output.as_object().unwrap()
         .values()
         .filter(|v| v.is_array())

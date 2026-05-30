@@ -45,11 +45,141 @@ Open http://localhost:5050
 
 ---
 
+## Docker
+
+### Build
+
+#### Python image
+
+```bash
+# From repo root
+docker build -f python/Dockerfile -t smart-scanner-py python/
+```
+
+This builds a multi-stage image:
+1. Rust stage compiles `pdf-hasher` (the hash cache binary)
+2. Python stage installs dependencies and copies the scanner code
+
+#### Rust image
+
+```bash
+# From repo root
+docker build -f rust/Dockerfile -t smart-scanner-rs rust/
+```
+
+This builds a single-stage image with the release binary.
+
+### Run
+
+#### Standalone (Python)
+
+```bash
+docker run -d \
+  --name smart-scanner \
+  -p 5050:5050 \
+  -v /path/to/exports:/exports \
+  -e KOMGA_BASE_URL=http://host.docker.internal:25600 \
+  -e KOMGA_USER=admin@example.com \
+  -e KOMGA_PASSWORD=your-password \
+  -e PG_HOST=host.docker.internal \
+  -e PG_PORT=5432 \
+  -e PG_DB=komga \
+  -e PG_USER=komga \
+  -e PG_PASSWORD=komga123 \
+  smart-scanner-py
+```
+
+#### Standalone (Rust)
+
+```bash
+docker run -d \
+  --name smart-scanner \
+  -p 5050:5050 \
+  -v /path/to/exports:/exports \
+  -e KOMGA_BASE_URL=http://host.docker.internal:25600 \
+  -e KOMGA_USER=admin@example.com \
+  -e KOMGA_PASSWORD=your-password \
+  -e PG_HOST=host.docker.internal \
+  -e PG_PORT=5432 \
+  -e PG_DB=komga \
+  -e PG_USER=komga \
+  -e PG_PASSWORD=komga123 \
+  smart-scanner-rs
+```
+
+### Docker Compose
+
+The repo includes a `docker-compose.yml` with a `smart-scanner` service
+that runs alongside Komga and PostgreSQL:
+
+```yaml
+# Relevant excerpt from docker-compose.yml
+services:
+  smart-scanner:
+    image: scan-library-tool:latest
+    container_name: komga-smart-scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      komga:
+        condition: service_started
+    ports:
+      - "5050:5050"
+    environment:
+      KOMGA_BASE_URL: http://komga:25600
+      KOMGA_USER: admin@gmail.com
+      KOMGA_PASSWORD: "your-password"
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DB: komga
+      PG_USER: komga
+      PG_PASSWORD: komga123
+      DRY_RUN: "false"
+      PORT: "5050"
+      SCAN_THREADS: "0"
+      HASH_CACHE_DIR: /exports
+```
+
+To use the Rust image instead, change the `image` field:
+
+```yaml
+  smart-scanner:
+    image: smart-scanner-rs:latest
+```
+
+Then build and start:
+
+```bash
+# Build the image first
+docker build -f rust/Dockerfile -t smart-scanner-rs:latest rust/
+
+# Start the stack
+docker compose up -d
+```
+
+### Hash Cache with Docker
+
+The hash cache is stored in a shared volume. Generate it once per library:
+
+```bash
+# Python image (includes pdf-hasher binary)
+docker compose run --rm smart-scanner pdf-hasher \
+  --root /data/manga --cache /exports/hashes-<library-id>.json -j 4
+
+# Rust image (built-in subcommand)
+docker compose run --rm smart-scanner komga-smart-scanner hash-cache \
+  --root /data/manga --cache /exports/hashes-<library-id>.json -j 4
+```
+
+After generating the cache, the scanner picks it up automatically on the next scan.
+
+---
+
 ## Compatibility Tests
 
 ```bash
 # From repo root — runs both and compares
-python3 compat-tests/compare.py
+python3 scan-library-tool/compat-tests/compare.py
 ```
 
 ```

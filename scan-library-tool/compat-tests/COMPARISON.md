@@ -1,7 +1,7 @@
 # Python vs Rust — Komga Smart Scanner Comparison
 
-This document compares the original Python implementation (`scan-library-tool/`)
-with the Rust rewrite (`rust-scan-library-tool/`) and proves behavioral equivalence
+This document compares the original Python implementation (`python/`)
+with the Rust rewrite (`rust/`) and proves behavioral equivalence
 via shared compatibility tests.
 
 ---
@@ -44,32 +44,109 @@ via shared compatibility tests.
 
 ## Behavioral Equivalence
 
-### Compatibility Test Results
+### Summary
 
-```
-Python: 24/24 passed
-Rust:   24/24 passed
+| Implementation | Total | Passed | Failed |
+|---|---|---|---|
+| Python | 24 | 24 | 0 |
+| Rust | 24 | 24 | 0 |
 
-ALL TESTS MATCH — Python and Rust produce identical results.
-```
-
-### Test Categories
-
-| Category | Cases | What's tested |
-|---|---|---|
-| URL normalization | 8 | `file:/path`, `file:///path/`, Java vs Python URLs, non-file passthrough |
-| mtime comparison | 6 | Sub-second tolerance, timezone stripping, Z suffix, empty strings |
-| Diff computation | 10 | No changes, new/deleted series, new/deleted books, changed (mtime/size/hash), pending hash, Java URL integration |
+**Verdict: ALL TESTS MATCH** — Python and Rust produce identical results for every test case.
 
 ### How to Run
 
 ```bash
 # From repo root
-python3 compat-tests/compare.py
+python3 scan-library-tool/compat-tests/compare.py
 ```
 
 This runs both implementations against `compat-tests/fixtures/test_cases.json` and
 diffs the JSON outputs. Exit code 0 = all match, exit code 1 = differences found.
+
+Full per-case results: [`RESULTS.md`](RESULTS.md)
+
+---
+
+### Test Case Details
+
+#### URL Normalization (8 cases)
+
+Both implementations normalize Java-style `file:/path` and Python-style `file:///path/`
+into a canonical `file:///path` form (no trailing slash).
+
+| # | Input | Expected | Python | Rust | Match |
+|---|---|---|---|---|---|
+| 0 | `file:/data/library-sample/sample-series/` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | PASS |
+| 1 | `file:/data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | PASS |
+| 2 | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | PASS |
+| 3 | `file:///data/library-sample/sample-series/` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | `file:///data/library-sample/sample-series` | PASS |
+| 4 | `file:/data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | PASS |
+| 5 | `file:///data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | `file:///data/.../sample_random_cool.pdf` | PASS |
+| 6 | `http://example.com` | `http://example.com` | `http://example.com` | `http://example.com` | PASS |
+| 7 | `file://localhost/data/foo` | `file:///localhost/data/foo` | `file:///localhost/data/foo` | `file:///localhost/data/foo` | PASS |
+
+#### mtime Comparison (6 cases)
+
+Both implementations compare modification times at second-level precision,
+stripping sub-second fractions and timezone suffixes.
+
+| # | FS mtime | DB mtime | Expected | Python | Rust | Match |
+|---|---|---|---|---|---|---|
+| 0 | `2026-05-26T10:25:23.774+00:00` | `2026-05-26T10:25:24` | `false` | `false` | `false` | PASS |
+| 1 | `2026-01-01T12:00:00.123+00:00` | `2026-01-01T12:00:00` | `true` | `true` | `true` | PASS |
+| 2 | `2026-01-01T12:00:00` | `2026-01-01T12:00:00` | `true` | `true` | `true` | PASS |
+| 3 | `2026-01-01T12:00:00` | `2026-01-01T12:00:01` | `false` | `false` | `false` | PASS |
+| 4 | `""` (empty) | `2026-01-01T12:00:00` | `null` | `null` | `null` | PASS |
+| 5 | `2026-01-01T12:00:00Z` | `2026-01-01T12:00:00` | `true` | `true` | `true` | PASS |
+
+#### Diff Computation (10 cases)
+
+| # | Test name | Scenario | Python | Rust | Match |
+|---|---|---|---|---|---|
+| 0 | no_changes | DB=1 series/1 book, FS=same | 0 new, 0 deleted, 0 changed | 0 new, 0 deleted, 0 changed | PASS |
+| 1 | new_series | DB=empty, FS=1 series | 1 new_series | 1 new_series | PASS |
+| 2 | deleted_series | DB=1 series, FS=empty | 1 deleted_series, 1 deleted_book | 1 deleted_series, 1 deleted_book | PASS |
+| 3 | new_book_in_existing_series | DB=1 book, FS=2 books | 1 new_book | 1 new_book | PASS |
+| 4 | changed_book_different_mtime | Same book, different mtime | 1 changed_book | 1 changed_book | PASS |
+| 5 | changed_book_different_size | Same book, different size | 1 changed_book | 1 changed_book | PASS |
+| 6 | changed_book_different_hash | Same book, different hash | 1 changed_book | 1 changed_book | PASS |
+| 7 | no_change_hash_matches | Same hash, different mtime | 0 changed (hash wins) | 0 changed (hash wins) | PASS |
+| 8 | pending_hash_fs_has_db_empty | FS has hash, DB empty | 1 pending_hash | 1 pending_hash | PASS |
+| 9 | integration_java_urls | Java `file:/` vs Python `file:///` | 1 new_series, 0 deleted | 1 new_series, 0 deleted | PASS |
+
+#### Rust Unit Tests (26 cases)
+
+```
+running 26 tests
+test diff::tests::test_mtime_missing ................ ok
+test diff::tests::test_mtime_same_second ............ ok
+test diff::tests::test_mtime_different .............. ok
+test diff::tests::test_mtime_diff_second ............ ok
+test diff::tests::test_mtime_z_suffix ............... ok
+test diff::tests::test_mtime_exact .................. ok
+test diff::tests::test_deleted_series ............... ok
+test diff::tests::test_changed_book_different_size .. ok
+test diff::tests::test_changed_book_different_mtime . ok
+test diff::tests::test_changed_book_different_hash .. ok
+test diff::tests::test_no_change_when_hash_matches_diff_size  ok
+test diff::tests::test_no_change_when_hash_matches .. ok
+test diff::tests::test_new_series ................... ok
+test diff::tests::test_new_book_in_existing_series .. ok
+test diff::tests::test_group_new_books_by_series .... ok
+test diff::tests::test_integration_real_data ........ ok
+test diff::tests::test_normalize_file_url_book ...... ok
+test diff::tests::test_no_changes ................... ok
+test diff::tests::test_normalize_file_url_db_fs_match  ok
+test diff::tests::test_normalize_file_url_empty_host  ok
+test diff::tests::test_normalize_file_url_java_db_single_slash  ok
+test diff::tests::test_normalize_file_url_java_db_single_slash_no_trailing  ok
+test diff::tests::test_normalize_file_url_non_file .. ok
+test diff::tests::test_normalize_file_url_python_triple_slash  ok
+test diff::tests::test_normalize_file_url_trailing_slash  ok
+test diff::tests::test_pending_hash_when_fs_hash_exists_db_empty  ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
 
 ---
 
@@ -112,7 +189,7 @@ The mmap optimization in Rust is transparent — same hash output for same input
 |---|---|---|
 | Script format | `#!/bin/bash` + comments + curl commands | Same |
 | Credential handling | `-u 'user:password'` in script | Same (redacted in SSE output) |
-| Category ordering | DELETE commands, then `empty-trash` | Same (fixed from initial Rust version) |
+| Category ordering | DELETE commands, then `empty-trash` | Same |
 | Combined script | `all.sh` with all categories | Same |
 
 ### 5. Web Server
@@ -148,7 +225,7 @@ no GC pauses, and native parallelism without GIL contention.
 ### Python
 
 ```bash
-cd scan-library-tool
+cd python
 pip install -r requirements.txt
 export KOMGA_BASE_URL=http://localhost:25600
 # ... set other env vars ...
@@ -158,7 +235,7 @@ python server.py
 ### Rust
 
 ```bash
-cd rust-scan-library-tool
+cd rust
 cargo build --release
 ./target/release/komga-smart-scanner serve
 # Or: cargo run --release -- serve
@@ -168,17 +245,17 @@ cargo build --release
 
 ```bash
 # Python
-docker build -f scan-library-tool/Dockerfile -t smart-scanner-py .
+docker build -f python/Dockerfile -t smart-scanner-py .
 
 # Rust
-docker build -f rust-scan-library-tool/Dockerfile -t smart-scanner-rs .
+docker build -f rust/Dockerfile -t smart-scanner-rs .
 ```
 
 ### CLI Mode
 
 ```bash
 # Python
-python scan-library-tool/main.py
+python python/main.py
 
 # Rust
 ./target/release/komga-smart-scanner scan
@@ -252,7 +329,7 @@ version and vice versa.
 
 ### From Python to Rust
 
-1. Build the Rust binary: `cargo build --release`
+1. Build the Rust binary: `cd rust && cargo build --release`
 2. Copy `.env` or set the same environment variables
 3. Stop the Python server
 4. Start the Rust server: `./target/release/komga-smart-scanner serve`

@@ -44,6 +44,9 @@ def run_rust():
     return json.loads(result.stdout)
 
 
+SECTIONS = ["normalize_url", "mtime_equals", "diff", "xxh3_128", "hash_cache"]
+
+
 def compare_section(py_data, rust_data, section):
     py_results = py_data.get(section, [])
     rust_results = rust_data.get(section, [])
@@ -56,16 +59,16 @@ def compare_section(py_data, rust_data, section):
         rust_r = rust_results[i] if i < len(rust_results) else None
 
         if py_r is None:
-            diffs.append({"index": i, "issue": "missing in Python"})
+            diffs.append({"index": i, "section": section, "issue": "missing in Python"})
             continue
         if rust_r is None:
-            diffs.append({"index": i, "issue": "missing in Rust"})
+            diffs.append({"index": i, "section": section, "issue": "missing in Rust"})
             continue
 
         # Compare pass/fail status
         if py_r.get("pass") != rust_r.get("pass"):
             diffs.append({
-                "index": i,
+                "index": i, "section": section,
                 "name": py_r.get("name", rust_r.get("name", "")),
                 "issue": "pass/fail mismatch",
                 "python_pass": py_r.get("pass"),
@@ -77,7 +80,7 @@ def compare_section(py_data, rust_data, section):
         rust_actual = rust_r.get("actual")
         if py_actual != rust_actual:
             diffs.append({
-                "index": i,
+                "index": i, "section": section,
                 "name": py_r.get("name", rust_r.get("name", "")),
                 "issue": "actual value mismatch",
                 "python_actual": py_actual,
@@ -91,22 +94,21 @@ def main():
     py_data = run_python()
     rust_data = run_rust()
 
-    py_summary = py_data.get("summary", {})
-    rust_summary = rust_data.get("summary", {})
-
-    print(f"\n{'='*60}")
-    print(f"Python: {py_summary.get('passed', 0)}/{py_summary.get('total', 0)} passed")
-    print(f"Rust:   {rust_summary.get('passed', 0)}/{rust_summary.get('total', 0)} passed")
-    print(f"{'='*60}\n")
-
     all_diffs = {}
-    for section in ["normalize_url", "mtime_equals", "diff"]:
+    for section in SECTIONS:
         diffs = compare_section(py_data, rust_data, section)
         if diffs:
             all_diffs[section] = diffs
 
     if not all_diffs:
-        print("ALL TESTS MATCH — Python and Rust produce identical results.")
+        # Recompute totals including all sections for accurate reporting
+        py_total = sum(len(py_data.get(s, [])) for s in SECTIONS)
+        py_pass = sum(1 for s in SECTIONS for r in py_data.get(s, []) if r.get("pass"))
+        rust_total = sum(len(rust_data.get(s, [])) for s in SECTIONS)
+        rust_pass = sum(1 for s in SECTIONS for r in rust_data.get(s, []) if r.get("pass"))
+        print(f"Python: {py_pass}/{py_total} passed")
+        print(f"Rust:   {rust_pass}/{rust_total} passed")
+        print("\nALL TESTS MATCH — Python and Rust produce identical results.")
         return 0
     else:
         print("DIFFERENCES FOUND:\n")
@@ -115,7 +117,8 @@ def main():
             for d in diffs:
                 name = d.get("name", "")
                 idx = d["index"]
-                label = f"  #{idx}" + (f" ({name})" if name else "")
+                sec = d.get("section", section)
+                label = f"  [{sec} #{idx}" + (f" ({name})" if name else "") + "]"
                 print(f"{label}: {d['issue']}")
                 if "python_actual" in d:
                     print(f"    Python: {d['python_actual']}")

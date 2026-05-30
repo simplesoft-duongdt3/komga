@@ -16,7 +16,7 @@ use futures::{Stream, StreamExt};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 use tokio_stream::wrappers::ReceiverStream;
-use tower_http::services::ServeDir;
+
 
 use crate::api::KomgaClient;
 use crate::config::Config;
@@ -71,6 +71,7 @@ pub struct HashCacheRequest {
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root_handler))
+        .route("/static/app.js", get(app_js_handler))
         .route("/api/version", get(version_handler))
         .route("/api/libraries", get(libraries_handler))
         .route("/api/list-requests", get(list_requests_handler))
@@ -81,8 +82,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/hash-cache/{library_id}", get(hash_cache_info_handler))
         .route("/api/hash-cache/{library_id}", post(hash_cache_generate_handler))
         .route("/api/hash-cache/{library_id}/download", get(hash_cache_download_handler))
-        .nest_service("/static", ServeDir::new("static"))
         .with_state(state)
+}
+
+async fn app_js_handler() -> Response {
+    let js = include_str!("../static/app.js");
+    (
+        [("content-type", "application/javascript; charset=utf-8")],
+        js,
+    )
+        .into_response()
 }
 
 // ── Handlers ────────────────────────────────────────────────
@@ -405,7 +414,7 @@ async fn execute_handler(
     let total = commands.len();
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 
-    let _ = tx.send(serde_json::json!({"type": "start", "total": total}).to_string()).await;
+    send_sse(&tx, &serde_json::json!({"type": "start", "total": total})).await;
 
     tokio::spawn(async move {
         for (i, cmd) in commands.iter().enumerate() {
@@ -429,13 +438,22 @@ async fn execute_handler(
                 "command": short_redacted, "success": success, "output": output,
                 "error": if !success && !error.is_empty() { error } else { String::new() },
             });
-            if tx.send(entry.to_string()).await.is_err() { break; }
+            if tx.send(sse_safe(&entry.to_string())).await.is_err() { break; }
         }
-        let _ = tx.send(serde_json::json!({"type": "done", "total": total, "succeeded": 0, "failed": 0}).to_string()).await;
+        send_sse(&tx, &serde_json::json!({"type": "done", "total": total, "succeeded": 0, "failed": 0})).await;
     });
 
     let stream = ReceiverStream::new(rx).map(|msg| Ok::<_, Infallible>(Event::default().data(msg)));
     Ok(Sse::new(stream).keep_alive(axum::response::sse::KeepAlive::new().interval(Duration::from_secs(15)).text(": heartbeat\n\n")))
+}
+
+fn sse_safe(msg: &str) -> String {
+    msg.replace('\n', " ").replace('\r', " ")
+}
+
+async fn send_sse(tx: &tokio::sync::mpsc::Sender<String>, msg: &serde_json::Value) {
+    let sanitized = sse_safe(&msg.to_string());
+    let _ = tx.send(sanitized).await;
 }
 
 fn redact_credentials(cmd: &str) -> String {
@@ -544,6 +562,11 @@ async fn hash_cache_generate_handler(
     AxumPath(library_id): AxumPath<String>,
     Json(req): Json<Option<HashCacheRequest>>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, AppError> {
+    // Resolve root BEFORE marking as in-progress — this can fail
+    let root = resolve_library_root(&state, &library_id).await?;
+    let threads = req.and_then(|r| r.threads).unwrap_or(state.config.hasher_threads);
+
+    // Now mark as in-progress
     {
         let mut generating = state.generating_libs.lock().await;
         if generating.contains(&library_id) {
@@ -552,9 +575,6 @@ async fn hash_cache_generate_handler(
         generating.insert(library_id.clone());
     }
 
-    let root = resolve_library_root(&state, &library_id).await?;
-    let threads = req.and_then(|r| r.threads).unwrap_or(state.config.hasher_threads);
-
     let gen_lib_id = library_id.clone();
     let cache_path = get_cache_path(&state.config, &library_id);
     let generating = state.generating_libs.clone();
@@ -562,7 +582,7 @@ async fn hash_cache_generate_handler(
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 
     tokio::spawn(async move {
-        let _ = tx.send(serde_json::json!({"event": "phase", "phase": "walking"}).to_string()).await;
+        send_sse(&tx, &serde_json::json!({"event": "phase", "phase": "walking"})).await;
 
         let cache_path_clone = cache_path.clone();
         let result = tokio::task::spawn_blocking(move || {
@@ -572,25 +592,25 @@ async fn hash_cache_generate_handler(
 
         match result {
             Ok(Ok(cache)) => {
-                let _ = tx.send(serde_json::json!({"event": "phase", "phase": "writing"}).to_string()).await;
+                send_sse(&tx, &serde_json::json!({"event": "phase", "phase": "writing"})).await;
                 match hasher::write_cache(&cache, &cache_path) {
                     Ok(_) => {
-                        let _ = tx.send(serde_json::json!({
+                        send_sse(&tx, &serde_json::json!({
                             "event": "done", "success": true,
                             "file_size_bytes": cache_path.metadata().map(|m| m.len()).unwrap_or(0),
                             "generated_at": Utc::now().to_rfc3339(),
-                        }).to_string()).await;
+                        })).await;
                     }
                     Err(e) => {
-                        let _ = tx.send(serde_json::json!({"event": "done", "success": false, "error": e.to_string()}).to_string()).await;
+                        send_sse(&tx, &serde_json::json!({"event": "done", "success": false, "error": e.to_string()})).await;
                     }
                 }
             }
             Ok(Err(e)) => {
-                let _ = tx.send(serde_json::json!({"event": "done", "success": false, "error": e.to_string()}).to_string()).await;
+                send_sse(&tx, &serde_json::json!({"event": "done", "success": false, "error": e.to_string()})).await;
             }
             Err(e) => {
-                let _ = tx.send(serde_json::json!({"event": "done", "success": false, "error": e.to_string()}).to_string()).await;
+                send_sse(&tx, &serde_json::json!({"event": "done", "success": false, "error": e.to_string()})).await;
             }
         }
 

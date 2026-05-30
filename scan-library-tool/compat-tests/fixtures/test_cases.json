@@ -219,5 +219,51 @@
       "fs_oneshots": [],
       "expected": {"new_series": 1, "deleted_series": 0, "new_books": 0, "deleted_books": 0, "changed_books": 0, "pending_hash": 0}
     }
+  ],
+  "xxh3_128": [
+    {"input": "", "expected": "99aa06d3014798d86001c324468d497f"},
+    {"input-hex": "68656c6c6f", "expected": "b5e9c1ad071b3e7fc779cfaa5e523818", "desc": "hello"},
+    {"input-hex": "4b6f6d676120536d617274205363616e6e657220686173682063616368652074657374", "expected": "83e125180d8f2ad1b3b97330c584f137", "desc": "test phrase"},
+    {"input-hex": "54686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f67", "expected": "ddd650205ca3e7fa24a1cc2e3a8a7651", "desc": "pangram"}
+  ],
+  "hash_cache": [
+    {
+      "name": "basic_cache",
+      "cache": {
+        "type": "XXH3_128 hash cache",
+        "version": 1,
+        "root": "/data/manga",
+        "generated_at_unix_secs": 1748000000,
+        "elapsed_secs": 12.3,
+        "total_files": 3,
+        "total_bytes": 6000,
+        "entries": {
+          "file:///data/manga/SeriesA/Ch01.pdf": {
+            "hash": "99aa06d3014798d86001c324468d497f",
+            "size": 1000,
+            "mtime_secs": 1748000000
+          },
+          "file:///data/manga/SeriesA/Ch02.pdf": {
+            "hash": "b5e9c1ad071b3e7fc779cfaa5e523818",
+            "size": 2000,
+            "mtime_secs": 1748000001
+          },
+          "file:///data/manga/SeriesB/Ch01.pdf": {
+            "hash": "83e125180d8f2ad1b3b97330c584f137",
+            "size": 3000,
+            "mtime_secs": 1748000002
+          }
+        }
+      },
+      "checks": {
+        "total_files": 3,
+        "total_bytes": 6000,
+        "root": "/data/manga",
+        "entry_count": 3,
+        "first_entry_hash": "99aa06d3014798d86001c324468d497f",
+        "first_entry_size": 1000,
+        "last_entry_hash": "83e125180d8f2ad1b3b97330c584f137"
+      }
+    }
   ]
 }

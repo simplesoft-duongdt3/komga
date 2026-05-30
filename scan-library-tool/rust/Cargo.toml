@@ -1,6 +1,6 @@
 [package]
 name = "komga-smart-scanner"
-version = "1.0.0"
+version = "202605.28.1"
 edition = "2021"
 description = "External diff-based scanner for Komga — PDF-only, reads PostgreSQL + filesystem, drives REST API"
 
@@ -30,3 +30,4 @@ tokio-stream = "0.1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
+hex = "0.4"

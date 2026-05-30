@@ -51,7 +51,7 @@ impl Config {
                 .unwrap_or_else(|_| "5050".into())
                 .parse()
                 .unwrap_or(5050),
-            version: env!("CARGO_PKG_VERSION").to_string(),
+            version: include_str!("../VERSION").trim().to_string(),
         }
     }
 

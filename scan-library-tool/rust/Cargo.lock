@@ -1066,13 +1066,14 @@ dependencies = [
 
 [[package]]
 name = "komga-smart-scanner"
-version = "1.0.0"
+version = "202605.28.1"
 dependencies = [
  "axum",
  "chrono",
  "clap",
  "dotenvy",
  "futures",
+ "hex",
  "memmap2",
  "rayon",
  "reqwest",

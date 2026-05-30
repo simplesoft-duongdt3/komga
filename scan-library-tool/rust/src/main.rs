@@ -14,7 +14,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
-use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -87,8 +86,8 @@ async fn run_server(cfg: config::Config, port: u16) -> Result<(), Box<dyn std::e
         config: cfg,
         api_client,
         pg_pool: pool,
-        generating_libs: Arc::new(Mutex::new(std::collections::HashSet::new())),
-        library_root_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
+        generating_libs: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        library_root_cache: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
     };
 
     let app = server::build_router(state);

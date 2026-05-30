@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -14,7 +15,7 @@ use axum::Router;
 use chrono::Utc;
 use futures::{Stream, StreamExt};
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 use tokio_stream::wrappers::ReceiverStream;
 
 
@@ -30,13 +31,34 @@ use crate::walker;
 
 // ── App state ───────────────────────────────────────────────
 
+const GENERATING_TIMEOUT: Duration = Duration::from_secs(300); // 5 min
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Config,
     pub api_client: KomgaClient,
     pub pg_pool: sqlx::PgPool,
-    pub generating_libs: Arc<Mutex<std::collections::HashSet<String>>>,
-    pub library_root_cache: Arc<Mutex<HashMap<String, (String, Instant)>>>,
+    pub generating_libs: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
+    pub library_root_cache: Arc<TokioMutex<HashMap<String, (String, Instant)>>>,
+}
+
+/// RAII guard that removes a library ID from generating_libs on drop,
+/// even if the enclosing task panics.
+struct GeneratingGuard {
+    libs: Arc<Mutex<std::collections::HashMap<String, Instant>>>,
+    library_id: String,
+}
+
+impl GeneratingGuard {
+    fn new(libs: Arc<Mutex<std::collections::HashMap<String, Instant>>>, library_id: String) -> Self {
+        Self { libs, library_id }
+    }
+}
+
+impl Drop for GeneratingGuard {
+    fn drop(&mut self) {
+        self.libs.lock().unwrap().remove(&self.library_id);
+    }
 }
 
 // ── Request types ───────────────────────────────────────────
@@ -568,11 +590,15 @@ async fn hash_cache_generate_handler(
 
     // Now mark as in-progress
     {
-        let mut generating = state.generating_libs.lock().await;
-        if generating.contains(&library_id) {
-            return Err(AppError::BadRequest("Hash generation already in progress for this library".into()));
+        let mut generating = state.generating_libs.lock().unwrap();
+        // Check for stale entry (previous task may have crashed without cleanup)
+        if let Some(started) = generating.get(&library_id) {
+            if started.elapsed() < GENERATING_TIMEOUT {
+                return Err(AppError::BadRequest("Hash generation already in progress for this library".into()));
+            }
+            tracing::warn!(library_id, elapsed_secs = started.elapsed().as_secs(), "Clearing stale generating_libs entry");
         }
-        generating.insert(library_id.clone());
+        generating.insert(library_id.clone(), Instant::now());
     }
 
     let gen_lib_id = library_id.clone();
@@ -582,6 +608,9 @@ async fn hash_cache_generate_handler(
     let (tx, rx) = tokio::sync::mpsc::channel::<String>(100);
 
     tokio::spawn(async move {
+        // Ensure cleanup on panic or normal exit
+        let _guard = GeneratingGuard::new(generating, gen_lib_id);
+
         send_sse(&tx, &serde_json::json!({"event": "phase", "phase": "walking"})).await;
 
         let cache_path_clone = cache_path.clone();
@@ -613,8 +642,6 @@ async fn hash_cache_generate_handler(
                 send_sse(&tx, &serde_json::json!({"event": "done", "success": false, "error": e.to_string()})).await;
             }
         }
-
-        generating.lock().await.remove(&gen_lib_id);
     });
 
     let stream = ReceiverStream::new(rx).map(|msg| Ok::<_, Infallible>(Event::default().data(msg)));

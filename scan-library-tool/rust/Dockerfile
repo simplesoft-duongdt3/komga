@@ -1,6 +1,6 @@
 FROM rust:1.86-slim AS builder
 WORKDIR /build
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock VERSION ./
 COPY src/ ./src/
 COPY static/ ./static/
 RUN apt-get update && apt-get install -y --no-install-recommends \

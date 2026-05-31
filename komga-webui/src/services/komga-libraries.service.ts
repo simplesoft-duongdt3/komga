@@ -119,4 +119,16 @@ export default class KomgaLibrariesService {
       throw new Error(msg)
     }
   }
+
+  async fixBookCounts(library: LibraryDto) {
+    try {
+      await this.http.post(`${API_LIBRARIES}/${library.id}/fix-book-counts`)
+    } catch (e) {
+      let msg = `An error occurred while trying to fix book counts for library '${library.name}'`
+      if (e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
 }

@@ -25,6 +25,9 @@
         <v-list-item @click="markUnread" v-if="!isUnread">
           <v-list-item-title>{{ $t('menu.mark_unread') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item @click="fixBookCount" v-if="isAdmin">
+          <v-list-item-title>{{ $t('menu.fix_book_count') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item @click="promptDeleteSeries" class="list-danger" v-if="isAdmin">
           <v-list-item-title>{{ $t('menu.delete') }}</v-list-item-title>
         </v-list-item>
@@ -94,6 +97,9 @@ export default Vue.extend({
     },
     promptDeleteSeries() {
       this.$store.dispatch('dialogDeleteSeries', this.series)
+    },
+    fixBookCount() {
+      this.$komgaSeries.fixBookCount(this.series.id)
     },
   },
 })

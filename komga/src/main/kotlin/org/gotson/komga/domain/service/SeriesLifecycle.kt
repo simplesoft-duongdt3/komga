@@ -112,10 +112,18 @@ class SeriesLifecycle(
       }
     }
 
-    // update book count for series
+    // update book count for series (non-deleted books only)
     seriesRepository.findByIdOrNull(series.id)?.let {
-      seriesRepository.update(it.copy(bookCount = books.size), false)
+      seriesRepository.update(it.copy(bookCount = books.count { b -> b.deletedDate == null }), false)
     }
+  }
+
+  fun fixSeriesBookCount(vararg seriesIds: String) {
+    require(seriesIds.isNotEmpty()) { "At least one seriesId must be provided" }
+    seriesIds.mapNotNull { seriesRepository.findByIdOrNull(it) }
+      .forEach { series ->
+        sortBooks(series)
+      }
   }
 
   fun addBooks(
@@ -146,6 +154,8 @@ class SeriesLifecycle(
     }
 
     toAdd.forEach { eventPublisher.publishEvent(DomainEvent.BookAdded(it)) }
+
+    sortBooks(series)
   }
 
   fun createSeries(series: Series): Series {

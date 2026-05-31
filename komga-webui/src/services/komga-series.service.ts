@@ -222,4 +222,16 @@ export default class KomgaSeriesService {
       throw new Error(msg)
     }
   }
+
+  async fixBookCount(seriesId: string) {
+    try {
+      await this.http.post(`${API_SERIES}/${seriesId}/fix-book-count`)
+    } catch (e) {
+      let msg = `An error occurred while trying to fix book count for series '${seriesId}'`
+      if (e.response.data.message) {
+        msg += `: ${e.response.data.message}`
+      }
+      throw new Error(msg)
+    }
+  }
 }

@@ -239,6 +239,12 @@ class TaskHandler(
             }
           }
 
+          is Task.FixBookCounts ->
+            libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
+              val series = seriesRepository.findAllByLibraryId(library.id).filter { it.deletedDate == null }
+              seriesLifecycle.fixSeriesBookCount(*series.map { it.id }.toTypedArray())
+            } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
+
           is Task.FindBookThumbnailsToRegenerate -> {
             taskEmitter.generateBookThumbnail(bookLifecycle.findBookThumbnailsToRegenerate(task.forBiggerResultOnly), task.priority)
           }
@@ -413,6 +419,7 @@ private fun Task.libraryId(): String? =
     is Task.FindBooksWithMissingPageHash -> libraryId
     is Task.FindDuplicatePagesToDelete -> libraryId
     is Task.EmptyTrash -> libraryId
+    is Task.FixBookCounts -> libraryId
     else -> null
   }
 

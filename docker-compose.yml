@@ -12,7 +12,7 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      #- ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U komga" ]
       interval: 10s
@@ -20,7 +20,7 @@ services:
       retries: 5
 
   komga:
-    image: komga-local:1.24.318
+    image: komga-local:1.24.319
     container_name: komga-backend
     depends_on:
       postgres:
@@ -52,7 +52,7 @@ services:
       - "25600:25600"
     volumes:
       - komga_config:/config
-      - /Users/duong/Documents/data-komga:/data:ro
+      - /Users/teamcumahay/Downloads/ThienThaiTruyen:/data:ro
     restart: unless-stopped
 
   smart-scanner:
@@ -80,7 +80,7 @@ services:
       HASH_CACHE_DIR: /exports
       HASHER_THREADS: "4"
     volumes:
-      - /Users/duong/Documents/data-komga:/data:ro
+      - /Users/teamcumahay/Downloads/ThienThaiTruyen:/data:ro
       - ./exports:/exports
 
 volumes:

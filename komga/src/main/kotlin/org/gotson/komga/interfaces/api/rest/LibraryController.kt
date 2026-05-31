@@ -236,6 +236,14 @@ class LibraryController(
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
 
+  @PostMapping("{libraryId}/fix-book-counts")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  @Operation(summary = "Fix book counts and numbering for all series in a library")
+  fun fixBookCounts(@PathVariable libraryId: String) {
+    taskEmitter.fixBookCounts(libraryId)
+  }
+
   @PostMapping("{libraryId}/analyze")
   @PreAuthorize("hasRole('ADMIN')")
   @ResponseStatus(HttpStatus.ACCEPTED)

@@ -244,6 +244,15 @@ sealed class Task(
     override fun toString(): String = "DeleteSeries(seriesId='$seriesId', priority='$priority')"
   }
 
+  class FixBookCounts(
+    val libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) : Task(priority) {
+    override val uniqueId = "FIX_BOOK_COUNTS_$libraryId"
+
+    override fun toString(): String = "FixBookCounts(libraryId='$libraryId', priority='$priority')"
+  }
+
   class FindBookThumbnailsToRegenerate(
     val forBiggerResultOnly: Boolean,
     priority: Int = DEFAULT_PRIORITY,

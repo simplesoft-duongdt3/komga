@@ -906,6 +906,8 @@
     "edit": "Edit",
     "edit_metadata": "Edit metadata",
     "empty_trash": "Empty trash",
+    "fix_book_count": "Fix book count",
+    "fix_book_counts": "Fix book counts",
     "mark_read": "Mark as read",
     "mark_unread": "Mark as unread",
     "pin": "Pin",

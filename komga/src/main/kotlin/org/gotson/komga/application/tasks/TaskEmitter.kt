@@ -292,6 +292,13 @@ class TaskEmitter(
     submitTask(Task.DeleteSeries(seriesId, priority))
   }
 
+  fun fixBookCounts(
+    libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) {
+    submitTask(Task.FixBookCounts(libraryId, priority))
+  }
+
   fun findBookThumbnailsToRegenerate(
     forBiggerResultOnly: Boolean,
     priority: Int = DEFAULT_PRIORITY,

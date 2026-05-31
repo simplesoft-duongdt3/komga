@@ -22,6 +22,9 @@
         <v-list-item @click="confirmEmptyTrash = true" v-if="isAdmin">
           <v-list-item-title>{{ $t('menu.empty_trash') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item @click="fixBookCounts" v-if="isAdmin">
+          <v-list-item-title>{{ $t('menu.fix_book_counts') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item @click="edit" v-if="isAdmin">
           <v-list-item-title>{{ $t('menu.edit') }}</v-list-item-title>
         </v-list-item>
@@ -97,6 +100,9 @@ export default Vue.extend({
     },
     emptyTrash() {
       this.$komgaLibraries.emptyTrash(this.library)
+    },
+    fixBookCounts() {
+      this.$komgaLibraries.fixBookCounts(this.library)
     },
     edit() {
       this.$store.dispatch('dialogEditLibrary', this.library)

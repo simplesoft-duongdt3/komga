@@ -660,6 +660,17 @@ class SeriesController(
     taskEmitter.analyzeBook(bookRepository.findAllBySeriesId(seriesId), HIGH_PRIORITY)
   }
 
+  @Operation(summary = "Fix book count and renumber books for a series", tags = [OpenApiConfiguration.TagNames.SERIES])
+  @PostMapping("v1/series/{seriesId}/fix-book-count")
+  @PreAuthorize("hasRole('ADMIN')")
+  @ResponseStatus(HttpStatus.ACCEPTED)
+  fun fixSeriesBookCount(
+    @PathVariable seriesId: String,
+    @AuthenticationPrincipal principal: KomgaPrincipal,
+  ) {
+    seriesLifecycle.fixSeriesBookCount(seriesId)
+  }
+
   @Operation(summary = "Refresh series metadata", tags = [OpenApiConfiguration.TagNames.SERIES])
   @PostMapping("v1/series/{seriesId}/metadata/refresh")
   @PreAuthorize("hasRole('ADMIN')")

@@ -109,3 +109,7 @@ def refresh_book_metadata(book_id: str):
 
 def refresh_series_metadata(series_id: str):
     _post(f"/api/v1/series/{series_id}/metadata/refresh")
+
+
+def fix_library_book_counts(library_id: str):
+    _post(f"/api/v1/libraries/{library_id}/fix-book-counts")

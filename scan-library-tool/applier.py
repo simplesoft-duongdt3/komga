@@ -10,7 +10,7 @@ from diff import Diff, group_new_books_by_series
 from api import (
     create_series, delete_book, delete_series, empty_trash,
     analyze_book, refresh_book_metadata, refresh_series_metadata,
-    get_series_books,
+    get_series_books, fix_library_book_counts,
 )
 from config import DRY_RUN, KOMGA_URL, KOMGA_USER, KOMGA_PASSWORD
 
@@ -59,6 +59,9 @@ def apply(diff: Diff, library_id: str, fs_data: dict,
     for sid in affected:
         if not DRY_RUN:
             refresh_series_metadata(sid)
+
+    if not DRY_RUN:
+        fix_library_book_counts(library_id)
 
 
 # ── Curl generation helpers ───────────────────────────────
@@ -114,6 +117,7 @@ def generate_curl_scripts(
         "pending_hash": _bld_pending_hash(diff),
         "to_be_analyzed": _bld_to_be_analyzed(diff),
         "no_metadata": _bld_no_metadata(diff),
+        "fix_book_counts": _bld_fix_book_counts(diff, library_id),
     }
 
     scripts: dict[str, str] = {}
@@ -295,6 +299,14 @@ def _bld_pending_hash(diff: Diff) -> list[str]:
             lines.append(f"# Hash book: {b['name']}")
             lines.append(_curl_cmd("PUT", f"/api/v1/books/{b['id']}/hash"))
     return lines
+
+
+def _bld_fix_book_counts(diff: Diff, library_id: str) -> list[str]:
+    """Generate fix book counts commands."""
+    return [
+        "# Fix book counts for library",
+        _curl_cmd("POST", f"/api/v1/libraries/{library_id}/fix-book-counts"),
+    ]
 
 
 # ── Curl script execution ─────────────────────────────────

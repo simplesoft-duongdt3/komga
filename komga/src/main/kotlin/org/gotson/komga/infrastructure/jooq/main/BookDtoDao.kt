@@ -338,6 +338,7 @@ class BookDtoDao(
     return dslRO
       .selectBase(userId)
       .where(b.SERIES_ID.eq(seriesId))
+      .and(b.DELETED_DATE.isNull)
       .orderBy(d.NUMBER_SORT.let { if (next) it.asc() else it.desc() })
       .seek(numberSort)
       .limit(1)

@@ -165,7 +165,7 @@ class TaskHandler(
                   .redirectErrorStream(true)
                   .start()
 
-                val finished = process.waitFor(600, TimeUnit.SECONDS)
+                val finished = process.waitFor(komgaProperties.hasherTimeoutSeconds, TimeUnit.SECONDS)
                 if (!finished) {
                   logger.warn { "pdf-hasher timed out for library ${library.id}" }
                   process.destroyForcibly()

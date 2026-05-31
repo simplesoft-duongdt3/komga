@@ -1,5 +1,6 @@
 package org.gotson.komga.domain.model
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonProperty
 
 data class HashCacheEntry(
@@ -8,12 +9,13 @@ data class HashCacheEntry(
   @JsonProperty("mtime_secs") val mtimeSecs: Long,
 )
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 data class HashCache(
   val type: String? = null,
   val version: Int? = null,
   val root: String? = null,
-  val totalFiles: Int? = null,
-  val totalBytes: Long? = null,
+  @JsonProperty("total_files") val totalFiles: Int? = null,
+  @JsonProperty("total_bytes") val totalBytes: Long? = null,
   val entries: Map<String, HashCacheEntry>,
 )
 

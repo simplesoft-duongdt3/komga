@@ -86,8 +86,16 @@ scanRootFolder(library)
 
 Produced by `pdf-hasher` Rust binary. Location: `{configDir}/hash-cache/hashes-{libraryId}.json`.
 
+#### Rust Output JSON
 ```json
 {
+  "type": "XXH3_128 hash cache",
+  "version": 1,
+  "root": "/path/to/library",
+  "generated_at_unix_secs": 1717050000,
+  "elapsed_secs": 1.5,
+  "total_files": 1000,
+  "total_bytes": 500000000,
   "entries": {
     "file:///data/SeriesA/Book1.pdf": {
       "hash": "a1b2c3d4...",
@@ -97,6 +105,29 @@ Produced by `pdf-hasher` Rust binary. Location: `{configDir}/hash-cache/hashes-{
   }
 }
 ```
+
+#### Kotlin DTO (`HashCache.kt`) Field Mapping
+
+| Rust serde field | JSON key | Kotlin property | Notes |
+|---|---|---|---|
+| `cache_type` `#[serde(rename = "type")]` | `"type"` | `type: String?` | |
+| `version` | `"version"` | `version: Int?` | |
+| `root` | `"root"` | `root: String?` | |
+| `generated_at_unix_secs` | `"generated_at_unix_secs"` | *ignored* | `@JsonIgnoreProperties(ignoreUnknown = true)` |
+| `elapsed_secs` | `"elapsed_secs"` | *ignored* | `@JsonIgnoreProperties(ignoreUnknown = true)` |
+| `total_files` | `"total_files"` | `@JsonProperty("total_files") totalFiles: Int?` | snake_case → camelCase |
+| `total_bytes` | `"total_bytes"` | `@JsonProperty("total_bytes") totalBytes: Long?` | snake_case → camelCase |
+| `entries` | `"entries"` | `entries: Map<String, HashCacheEntry>` | |
+
+**`HashCacheEntry` field mapping:**
+
+| Rust field | JSON key | Kotlin property | Notes |
+|---|---|---|---|
+| `hash` | `"hash"` | `hash: String` | |
+| `size` | `"size"` | `size: Long` | |
+| `mtime_secs` | `"mtime_secs"` | `@JsonProperty("mtime_secs") mtimeSecs: Long` | snake_case → camelCase |
+
+**File URI format**: Rust produces `file://{path}` (e.g. `file:///data/SeriesA/Book1.pdf`). The Kotlin side reads via `URI(key)` which correctly parses standard file URIs.
 
 ### Cache Invalidation
 

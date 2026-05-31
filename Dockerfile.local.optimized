@@ -49,9 +49,9 @@ COPY komga-tray ./komga-tray
 # Copy built frontend from frontend-builder stage
 COPY --from=frontend-builder /app/dist/ komga/src/main/resources/public/
 
-# Build the backend JAR (skip prepareThymeLeaf since frontend is already built)
-ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN ./gradlew :komga:bootJar -x test -x generateGitProperties -x prepareThymeLeaf
+    # Build the backend JAR (skip prepareThymeLeaf since frontend is already built)
+    ENV NODE_OPTIONS="--max-old-space-size=4096"
+    RUN ./gradlew :komga:bootJar -x test -x generateGitProperties -x prepareThymeLeaf
 
 
 # Stage 3: Rust builder
@@ -72,7 +72,7 @@ COPY --from=rust-builder /build/target/release/pdf-hasher /usr/local/bin/
 COPY --from=backend-builder /app/komga/build/libs/komga-*.jar komga.jar
 
 # Create non-root user and ensure config/tmp directories are writable
-RUN addgroup -S komga && adduser -S komga -G komga && \
+RUN groupadd --system komga && useradd --system --gid komga komga && \
     mkdir -p /config /tmp/komga && \
     chown -R komga:komga /config /tmp/komga
 

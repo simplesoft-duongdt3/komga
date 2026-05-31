@@ -50,6 +50,9 @@ class KomgaProperties {
   @Positive
   var hasherThreads: Int = 4
 
+  @Positive
+  var hasherTimeoutSeconds: Long = 1800
+
   var kobo = Kobo()
 
   val fonts = Fonts()

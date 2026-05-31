@@ -20,7 +20,7 @@ services:
       retries: 5
 
   komga:
-    image: komga-local:1.24.322
+    image: komga-local:1.24.323
     container_name: komga-backend
     depends_on:
       postgres:
@@ -44,6 +44,8 @@ services:
       #SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
       #SPRING_FLYWAY_BASELINE_VERSION: "20250730173126"
       JAVA_TOOL_OPTIONS: "-Xmx3G"
+      KOMGA_HASHER_THREADS: "4"
+      KOMGA_HASHER_TIMEOUT_SECONDS: "1800"
     deploy:
       resources:
         limits:

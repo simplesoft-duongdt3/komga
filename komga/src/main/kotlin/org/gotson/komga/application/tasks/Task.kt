@@ -63,6 +63,15 @@ sealed class Task(
     override fun toString(): String = "EmptyTrash(libraryId='$libraryId', priority='$priority')"
   }
 
+  class HashLibrary(
+    val libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) : Task(priority) {
+    override val uniqueId = "HASH_LIBRARY_$libraryId"
+
+    override fun toString(): String = "HashLibrary(libraryId='$libraryId', priority='$priority')"
+  }
+
   class AnalyzeBook(
     val bookId: String,
     priority: Int = DEFAULT_PRIORITY,

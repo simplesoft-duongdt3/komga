@@ -1,6 +1,7 @@
 package org.gotson.komga.domain.service
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.gotson.komga.application.tasks.TaskEmitter
 import org.gotson.komga.domain.model.Book
 import org.gotson.komga.domain.model.BookMetadataPatchCapability
@@ -15,6 +16,7 @@ import org.gotson.komga.domain.model.Series
 import org.gotson.komga.domain.model.Sidecar
 import org.gotson.komga.domain.model.SidecarStored
 import org.gotson.komga.domain.model.ThumbnailBook
+import org.gotson.komga.domain.model.HashCache
 import org.gotson.komga.domain.model.ThumbnailSeries
 import org.gotson.komga.domain.persistence.BookMetadataRepository
 import org.gotson.komga.domain.persistence.BookRepository
@@ -32,15 +34,19 @@ import org.gotson.komga.infrastructure.configuration.KomgaSettingsProvider
 import org.gotson.komga.infrastructure.hash.Hasher
 import org.gotson.komga.language.notEquals
 import org.gotson.komga.language.toIndexedMap
+import kotlin.io.path.extension
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
+import java.net.URI
 import java.net.URL
 import java.nio.file.Paths
+import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -79,16 +85,32 @@ class LibraryContentLifecycle(
   private val thumbnailBookRepository: ThumbnailBookRepository,
   private val eventPublisher: ApplicationEventPublisher,
   private val thumbnailSeriesRepository: ThumbnailSeriesRepository,
+  private val hashCacheLoader: HashCacheLoader,
+  private val dbSnapshotExporter: DbSnapshotExporter,
+  private val scanDiffer: ScanDiffer,
 ) {
   fun scanRootFolder(
     library: Library,
     scanDeep: Boolean = false,
   ): ScanRootFolderMetrics {
     val scanId = UUID.randomUUID().toString().substring(0, 8)
+
+    val hashCache = hashCacheLoader.load(library.id)
+    if (hashCache != null) {
+      logger.info { "scanRootFolder started scanId=$scanId libraryId=${library.id} root=${library.root} mode=cache" }
+      return scanWithCache(library, hashCache, scanId)
+    }
+
+    throw DirectoryNotFoundException("No hash cache found for library ${library.id}. Run hashLibrary task first.")
+  }
+
+  private fun scanWithFilesystemWalk(
+    library: Library,
+    scanDeep: Boolean,
+    scanId: String,
+  ): ScanRootFolderMetrics {
     val metrics = ScanRootFolderMetrics()
     val totalStartNanos = System.nanoTime()
-
-    logger.info { "scanRootFolder started scanId=$scanId libraryId=${library.id} scanDeep=$scanDeep root=${library.root}" }
 
     try {
       val (scanResult, filesystemScanMs) =
@@ -440,6 +462,302 @@ class LibraryContentLifecycle(
     return metrics
   }
 
+  private fun scanWithCache(
+    library: Library,
+    hashCache: HashCache,
+    scanId: String,
+  ): ScanRootFolderMetrics {
+    val metrics = ScanRootFolderMetrics()
+    val totalStartNanos = System.nanoTime()
+    val mapper = jacksonObjectMapper()
+
+    try {
+      // Phase 1: export DB snapshot
+      val (dbSnapshot, dbSnapshotMs) =
+        logScanPhase(scanId, library, "export_db_snapshot", details = {
+          "series=${it.series.size} books=${it.books.size}"
+        }) {
+          dbSnapshotExporter.export(library.id)
+        }
+      metrics.loadExistingMs = dbSnapshotMs
+
+      // Phase 2: load hash cache (already loaded)
+      val (_, loadCacheMs) =
+        logScanPhase(scanId, library, "load_hash_cache", details = {
+          "entries=${hashCache.entries.size}"
+        }) {
+          hashCache
+        }
+      metrics.filesystemScanMs = loadCacheMs
+      metrics.scannedBooks = hashCache.entries.size
+      metrics.scannedSeries = dbSnapshot.series.size
+
+      // Phase 3: diff
+      val (diff, diffMs) =
+        logScanPhase(scanId, library, "diff", details = {
+          "new=${it.newBookUris.size} deleted=${it.deletedBookUris.size} changed=${it.changedBooks.size}"
+        }) {
+          scanDiffer.diff(hashCache, dbSnapshot)
+        }
+
+      val seriesToSortAndRefresh = mutableListOf<Series>()
+      val reconciledSeriesByUrl = mutableMapOf<URL, Series>()
+
+      // Phase 4: delete missing series (series in DB but directory removed)
+      val (deletedSeriesCount, deleteMissingSeriesMs) =
+        logScanPhase(scanId, library, "delete_missing_series", details = { deletedCount ->
+          "deletedSeries=$deletedCount"
+        }) {
+          val allDbSeriesUrls = dbSnapshot.series.keys
+          val knownUrls = hashCache.entries.keys.map { it.substringBeforeLast("/") + "/" }.toSet()
+          val missingUrls = allDbSeriesUrls - knownUrls
+          if (missingUrls.isEmpty()) 0
+          else {
+            val series = missingUrls.mapNotNull { url ->
+              dbSnapshot.series[url]?.let { s -> seriesRepository.findByIdOrNull(s.id) }
+            }.filter { it.deletedDate == null }
+            if (series.isNotEmpty()) {
+              logger.info { "Soft deleting series not on disk anymore: ${series.map { it.name }}" }
+              seriesLifecycle.softDeleteMany(series)
+            }
+            series.size
+          }
+        }
+      metrics.deleteMissingSeriesMs = deleteMissingSeriesMs
+      metrics.deletedSeries = deletedSeriesCount
+
+      // Phase 5: delete missing books
+      val (deletedBooksState, deleteMissingBooksMs) =
+        logScanPhase(scanId, library, "delete_missing_books", details = { state ->
+          "deletedBooks=${state.deletedBooks} affectedSeries=${state.seriesToSortAndRefresh.size}"
+        }) {
+          val activeBookUris = hashCache.entries.keys
+          val deletedUris = diff.deletedBookUris
+          val books = deletedUris.mapNotNull { dbSnapshot.books[it] }
+          val seriesToRefresh = mutableListOf<Series>()
+          if (books.isNotEmpty()) {
+            val dbBooks = books.mapNotNull { bookEntry -> bookRepository.findByIdOrNull(bookEntry.id) }
+            bookLifecycle.softDeleteMany(dbBooks)
+            val seriesIds = dbBooks.map { it.seriesId }.distinct()
+            seriesIds.forEach { sid ->
+              seriesRepository.findByIdOrNull(sid)?.let { seriesToRefresh.add(it) }
+            }
+          }
+          DeletedBooksState(seriesToRefresh, books.size)
+        }
+      metrics.deleteMissingBooksMs = deleteMissingBooksMs
+      metrics.deletedBooks = deletedBooksState.deletedBooks
+      seriesToSortAndRefresh.addAll(deletedBooksState.seriesToSortAndRefresh)
+
+      // Phase 6: create new series and add new/existing books
+      val (_, reconcileMs) =
+        logScanPhase(scanId, library, "reconcile_series_books", details = {
+          "createdSeries=${metrics.createdSeries} addedBooks=${metrics.addedBooks} outdatedBooks=${metrics.outdatedBooks}"
+        }) {
+          diff.newBooksGroupedBySeriesUrl.forEach { (seriesUrl, bookUris) ->
+            val existingSeries = dbSnapshot.series[seriesUrl]
+            val newBooks = bookUris.mapNotNull { uri ->
+              hashCache.entries[uri]?.let { entry ->
+                Book(
+                  name = java.nio.file.Paths.get(URI(uri)).fileName.toString().removeSuffix("." + java.nio.file.Paths.get(URI(uri)).extension),
+                  url = URI(uri).toURL(),
+                  fileLastModified = LocalDateTime.ofEpochSecond(entry.mtimeSecs, 0, java.time.ZoneOffset.UTC),
+                  fileSize = entry.size,
+                  fileHash = entry.hash,
+                  libraryId = library.id,
+                  seriesId = existingSeries?.id ?: "",
+                )
+              }
+            }
+
+            if (existingSeries == null) {
+              val dirName = try {
+                java.nio.file.Paths.get(URI(seriesUrl)).fileName?.toString() ?: URI(seriesUrl).path.trim('/').substringAfterLast('/')
+              } catch (_: Exception) { URI(seriesUrl).path.trim('/').substringAfterLast('/') }
+              .ifBlank { "new-series" }
+              val newSeries = Series(
+                name = dirName,
+                url = URI(seriesUrl).toURL(),
+                fileLastModified = newBooks.maxOfOrNull { it.fileLastModified } ?: LocalDateTime.now(),
+                libraryId = library.id,
+              )
+              val createdSeries = seriesLifecycle.createSeries(newSeries)
+              seriesLifecycle.addBooks(createdSeries, newBooks)
+              tryRestoreSeries(createdSeries, newBooks)
+              tryRestoreBooks(newBooks)
+              metrics.createdSeries += 1
+              metrics.addedBooks += newBooks.size
+              seriesToSortAndRefresh.add(createdSeries)
+              reconciledSeriesByUrl[URI(seriesUrl).toURL()] = createdSeries
+            } else {
+              val dbSeries = seriesRepository.findByIdOrNull(existingSeries.id) ?: return@forEach
+              val currentBooks = bookRepository.findAllBySeriesId(dbSeries.id)
+              val existingActiveByUrl = currentBooks.filter { it.deletedDate == null }.associateBy { it.url.toString() }
+              val booksToAdd = newBooks.filterNot { existingActiveByUrl.containsKey(it.url.toString()) }
+              if (booksToAdd.isNotEmpty()) {
+                seriesLifecycle.addBooks(dbSeries, booksToAdd)
+                tryRestoreBooks(booksToAdd)
+                metrics.addedBooks += booksToAdd.size
+              }
+              seriesToSortAndRefresh.add(dbSeries)
+              reconciledSeriesByUrl[dbSeries.url] = dbSeries
+            }
+          }
+
+          // Process changed books
+          diff.changedBooks.forEach { (_, changed) ->
+            val dbBook = bookRepository.findByIdOrNull(changed.bookId) ?: return@forEach
+            val updatedBook = dbBook.copy(
+              fileHash = changed.newHash,
+              fileSize = changed.newSize,
+            )
+            transactionTemplate.executeWithoutResult {
+              mediaRepository.findById(changed.bookId).let {
+                mediaRepository.update(it.copy(status = Media.Status.OUTDATED))
+              }
+              bookRepository.update(updatedBook)
+            }
+            metrics.outdatedBooks += 1
+          }
+        }
+      metrics.reconcileSeriesBooksMs = reconcileMs
+
+      // Phase 7: sort and refresh
+      val (_, sortAndRefreshMs) =
+        logScanPhase(scanId, library, "sort_and_refresh_series", details = { queuedCount ->
+          "seriesRefreshQueued=$queuedCount"
+        }) {
+          val distinctSeriesToRefresh = seriesToSortAndRefresh.distinctBy { it.id }
+          distinctSeriesToRefresh.forEach { seriesLifecycle.sortBooks(it) }
+          taskEmitter.refreshSeriesMetadata(distinctSeriesToRefresh.map { it.id })
+          distinctSeriesToRefresh.size
+        }
+      metrics.sortAndRefreshMs = sortAndRefreshMs
+      metrics.seriesRefreshQueued = seriesToSortAndRefresh.distinctBy { it.id }.size
+
+      // Phase 8: sidecar reconciliation (simplified for cache path)
+      val (existingSidecarsState, reconcileSidecarsMs) =
+        logScanPhase(scanId, library, "reconcile_sidecars", details = { state ->
+          "existingSidecars=${state.size} seriesToCheck=${reconciledSeriesByUrl.size}"
+        }) {
+          val existingSidecars = sidecarRepository.findAll().filter { it.libraryId == library.id }
+          val reconciledBooksByUrl =
+            reconciledSeriesByUrl.values.flatMap { series ->
+              bookRepository.findAllBySeriesId(series.id).filter { it.deletedDate == null }
+            }.associateBy { it.url.toString() }
+
+          reconciledSeriesByUrl.forEach { (seriesUrl, series) ->
+            try {
+              val seriesPath = java.nio.file.Paths.get(URI(seriesUrl.toString()))
+              if (seriesPath.toFile().exists()) {
+                val seriesSidecarFiles = seriesPath.toFile().listFiles { f ->
+                  val name = f.name.lowercase()
+                  name == "metadata.json" || name == "series.json" || name == "collection.json" || name == "series.xml" || name == "comicinfo.xml" || name == "comicbook.xml"
+                }?.toList().orEmpty()
+                seriesSidecarFiles.forEach { file ->
+                  val sidecarUrl = file.toURI().toURL()
+                  val existing = existingSidecars.find { it.url == sidecarUrl }
+                  val lastModified = LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(file.lastModified()),
+                    java.time.ZoneId.systemDefault(),
+                  )
+                  if (existing == null || existing.lastModifiedTime != lastModified) {
+                    when {
+                      file.name.equals("series.json", ignoreCase = true) || file.name.equals("series.xml", ignoreCase = true) ->
+                        taskEmitter.refreshSeriesMetadata(series.id)
+                      file.name.equals("collection.json", ignoreCase = true) ->
+                        taskEmitter.refreshSeriesLocalArtwork(series.id)
+                      file.name.equals("metadata.json", ignoreCase = true) ->
+                        taskEmitter.refreshSeriesMetadata(series.id)
+                      file.name.equals("comicinfo.xml", ignoreCase = true) || file.name.equals("comicbook.xml", ignoreCase = true) ->
+                        taskEmitter.refreshSeriesMetadata(series.id)
+                    }
+                    sidecarRepository.save(library.id, Sidecar(sidecarUrl, seriesUrl, lastModified, Sidecar.Type.METADATA, Sidecar.Source.SERIES))
+                    metrics.changedSidecars += 1
+                  }
+                }
+              }
+            } catch (_: Exception) {}
+          }
+
+          reconciledBooksByUrl.values.forEach { book ->
+            try {
+              val bookSidecars = fileSystemScanner.scanBookSidecars(java.nio.file.Paths.get(URI(book.url.toString())))
+              bookSidecars.forEach { sidecar ->
+                val existing = existingSidecars.find { it.url == sidecar.url }
+                if (existing == null || existing.lastModifiedTime != sidecar.lastModifiedTime) {
+                  when (sidecar.type) {
+                    Sidecar.Type.ARTWORK -> taskEmitter.refreshBookLocalArtwork(book)
+                    Sidecar.Type.METADATA -> taskEmitter.refreshBookMetadata(book)
+                  }
+                  sidecarRepository.save(library.id, Sidecar(sidecar.url, book.url, sidecar.lastModifiedTime, sidecar.type, Sidecar.Source.BOOK))
+                  metrics.changedSidecars += 1
+                }
+              }
+            } catch (_: Exception) {}
+          }
+
+          existingSidecars
+        }
+      metrics.reconcileSidecarsMs = reconcileSidecarsMs
+
+      // Phase 9: cleanup sidecars
+      val (deletedSidecarsCount, cleanupSidecarsMs) =
+        logScanPhase(scanId, library, "cleanup_sidecars", details = { deletedSidecars ->
+          "deletedSidecars=$deletedSidecars"
+        }) {
+          val currentSidecarUrls = mutableSetOf<URL>()
+          reconciledSeriesByUrl.keys.forEach { seriesUrl ->
+            try {
+              val seriesPath = java.nio.file.Paths.get(URI(seriesUrl.toString()))
+              if (seriesPath.toFile().exists()) {
+                seriesPath.toFile().listFiles()?.forEach { file ->
+                  if (file.isFile) currentSidecarUrls.add(file.toURI().toURL())
+                }
+              }
+            } catch (_: Exception) {}
+          }
+          existingSidecarsState
+            .filterNot { existing -> currentSidecarUrls.contains(existing.url) }
+            .let { sidecars ->
+              sidecarRepository.deleteByLibraryIdAndUrls(library.id, sidecars.map { it.url })
+              sidecars.size
+            }
+        }
+      metrics.cleanupSidecarsMs = cleanupSidecarsMs
+      metrics.deletedSidecars = deletedSidecarsCount
+
+      val (_, cleanupMs) =
+        logScanPhase(scanId, library, if (library.emptyTrashAfterScan) "empty_trash" else "cleanup_empty_sets", details = {
+          "emptyTrashAfterScan=${library.emptyTrashAfterScan}"
+        }) {
+          if (library.emptyTrashAfterScan) emptyTrash(library)
+          else cleanupEmptySets()
+        }
+      metrics.cleanupMs = cleanupMs
+
+      val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000
+      metrics.totalMs = totalMs
+      logger.info {
+        "scanRootFolder completed status=ok scanId=$scanId libraryId=${library.id} mode=cache" +
+          " totalMs=$totalMs scannedBooks=${metrics.scannedBooks} existingSeries=${metrics.existingSeries}" +
+          " deletedSeries=${metrics.deletedSeries} deletedBooks=${metrics.deletedBooks}" +
+          " createdSeries=${metrics.createdSeries} addedBooks=${metrics.addedBooks}" +
+          " outdatedBooks=${metrics.outdatedBooks} seriesRefreshQueued=${metrics.seriesRefreshQueued}" +
+          " changedSidecars=${metrics.changedSidecars} deleteMissingSeriesMs=${metrics.deleteMissingSeriesMs}" +
+          " deleteMissingBooksMs=${metrics.deleteMissingBooksMs} reconcileSeriesBooksMs=${metrics.reconcileSeriesBooksMs}" +
+          " sortAndRefreshMs=${metrics.sortAndRefreshMs} reconcileSidecarsMs=${metrics.reconcileSidecarsMs}" +
+          " cleanupSidecarsMs=${metrics.cleanupSidecarsMs} cleanupMs=${metrics.cleanupMs}"
+      }
+    } catch (e: Exception) {
+      val totalMs = (System.nanoTime() - totalStartNanos) / 1_000_000
+      logger.warn(e) { "scanRootFolder completed status=failed scanId=$scanId libraryId=${library.id} mode=cache totalMs=$totalMs" }
+      throw e
+    }
+    eventPublisher.publishEvent(DomainEvent.LibraryScanned(library))
+    return metrics
+  }
+
   private inline fun <T> logScanPhase(
     scanId: String,
     library: Library,
@@ -673,7 +991,8 @@ class LibraryContentLifecycle(
       seriesRepository.findByIdOrNull(seriesId)?.let { seriesLifecycle.sortBooks(it) }
     }
 
-    cleanupEmptySets()
+    collectionLifecycle.deleteEmptyCollections()
+    readListLifecycle.deleteEmptyReadLists()
   }
 
   private fun cleanupEmptySets() {

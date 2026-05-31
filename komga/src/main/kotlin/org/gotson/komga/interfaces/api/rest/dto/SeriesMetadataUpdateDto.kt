@@ -13,19 +13,19 @@ class SeriesMetadataUpdateDto {
 
   fun isSet(prop: String) = isSet.getOrDefault(prop, false)
 
-  val status: SeriesMetadata.Status? = null
+  var status: SeriesMetadata.Status? = null
 
-  val statusLock: Boolean? = null
-
-  @get:NullOrNotBlank
-  val title: String? = null
-
-  val titleLock: Boolean? = null
+  var statusLock: Boolean? = null
 
   @get:NullOrNotBlank
-  val titleSort: String? = null
+  var title: String? = null
 
-  val titleSortLock: Boolean? = null
+  var titleLock: Boolean? = null
+
+  @get:NullOrNotBlank
+  var titleSort: String? = null
+
+  var titleSortLock: Boolean? = null
 
   var summary: String? = null
 

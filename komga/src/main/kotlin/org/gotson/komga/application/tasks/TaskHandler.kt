@@ -22,16 +22,19 @@ import org.gotson.komga.domain.service.PageHashLifecycle
 import org.gotson.komga.domain.service.ScanRootFolderMetrics
 import org.gotson.komga.domain.service.SeriesLifecycle
 import org.gotson.komga.domain.service.SeriesMetadataLifecycle
+import org.gotson.komga.infrastructure.configuration.KomgaProperties
 import org.gotson.komga.infrastructure.jooq.UnpagedSorted
 import org.gotson.komga.infrastructure.search.SearchIndexLifecycle
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_EXECUTION
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_FAILURE
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
+import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import kotlin.time.measureTime
 import kotlin.time.toJavaDuration
 
@@ -54,6 +57,7 @@ class TaskHandler(
   private val bookPageEditor: BookPageEditor,
   private val searchIndexLifecycle: SearchIndexLifecycle,
   private val pageHashLifecycle: PageHashLifecycle,
+  private val komgaProperties: KomgaProperties,
   private val meterRegistry: MeterRegistry,
   private val taskExecutionRepository: TaskExecutionRepository,
   private val libraryScanExecutionRepository: LibraryScanExecutionRepository,
@@ -136,6 +140,43 @@ class TaskHandler(
           is Task.EmptyTrash ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
               libraryContentLifecycle.emptyTrash(library)
+            } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
+
+          is Task.HashLibrary ->
+            libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
+              val cacheDir = Paths.get(komgaProperties.configDir ?: ".", "hash-cache")
+              try {
+                java.nio.file.Files.createDirectories(cacheDir)
+              } catch (_: Exception) {}
+              val cacheFile = cacheDir.resolve("hashes-${library.id}.json")
+              val root = Paths.get(library.root.toURI())
+
+              val cmd =
+                listOf(
+                  "pdf-hasher",
+                  "--root", root.toString(),
+                  "--cache", cacheFile.toString(),
+                  "-j", komgaProperties.hasherThreads.toString(),
+                )
+
+              try {
+                logger.info { "Running pdf-hasher for library ${library.id}: $cmd" }
+                val process = ProcessBuilder(cmd)
+                  .redirectErrorStream(true)
+                  .start()
+
+                val finished = process.waitFor(600, TimeUnit.SECONDS)
+                if (!finished) {
+                  logger.warn { "pdf-hasher timed out for library ${library.id}" }
+                  process.destroyForcibly()
+                } else if (process.exitValue() != 0) {
+                  logger.warn { "pdf-hasher failed with exit code ${process.exitValue()} for library ${library.id}" }
+                }
+              } catch (e: Exception) {
+                logger.warn(e) { "pdf-hasher execution failed for library ${library.id}" }
+              }
+
+              taskEmitter.scanLibrary(library.id, scanDeep = false, priority = task.priority)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
 
           is Task.AnalyzeBook ->
@@ -420,6 +461,7 @@ private fun Task.libraryId(): String? =
     is Task.FindDuplicatePagesToDelete -> libraryId
     is Task.EmptyTrash -> libraryId
     is Task.FixBookCounts -> libraryId
+    is Task.HashLibrary -> libraryId
     else -> null
   }
 

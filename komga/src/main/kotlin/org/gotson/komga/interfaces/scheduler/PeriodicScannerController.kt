@@ -25,7 +25,7 @@ class PeriodicScannerController(
       .filter { it.scanOnStartup }
       .forEach {
         logger.info { "Scan on startup for library: ${it.name}" }
-        taskEmitter.scanLibrary(it.id)
+        taskEmitter.hashLibrary(it.id)
       }
   }
 

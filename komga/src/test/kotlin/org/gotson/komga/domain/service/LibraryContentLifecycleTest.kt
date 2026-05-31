@@ -6,6 +6,10 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.slot
 import io.mockk.verify
+import org.gotson.komga.domain.model.HashCache
+import org.gotson.komga.domain.model.HashCacheEntry
+import java.time.Instant
+import java.time.ZoneId
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.catchThrowable
 import org.gotson.komga.application.tasks.TaskEmitter
@@ -80,6 +84,9 @@ class LibraryContentLifecycleTest(
   private lateinit var mockScanner: FileSystemScanner
 
   @MockkBean
+  private lateinit var mockHashCacheLoader: HashCacheLoader
+
+  @MockkBean
   private lateinit var mockAnalyzer: BookAnalyzer
 
   @MockkBean
@@ -89,6 +96,21 @@ class LibraryContentLifecycleTest(
   private lateinit var mockTaskEmitter: TaskEmitter
 
   private val user = KomgaUser("user@example.org", "", id = "1")
+
+  private fun toHashCache(vararg scans: Map<Series, List<Book>>): List<HashCache> =
+    scans.map { seriesBooks ->
+      val entries =
+        seriesBooks.flatMap { (_, books) ->
+          books.map { book ->
+            book.url.toString() to HashCacheEntry(
+              hash = "mock-hash-${book.name}",
+              size = book.fileSize,
+              mtimeSecs = book.fileLastModified.atZone(ZoneId.systemDefault()).toEpochSecond(),
+            )
+          }
+        }.toMap()
+      HashCache(entries = entries)
+    }
 
   @BeforeAll
   fun setup() {
@@ -114,6 +136,12 @@ class LibraryContentLifecycleTest(
   fun `clear repositories`() {
     libraryRepository.findAll().forEach {
       libraryLifecycle.deleteLibrary(it)
+    }
+    collectionRepository.findAll(pageable = Pageable.unpaged()).content.forEach {
+      collectionLifecycle.deleteCollection(it)
+    }
+    readListRepository.findAll(pageable = Pageable.unpaged()).content.forEach {
+      readListLifecycle.deleteReadList(it)
     }
   }
 
@@ -1333,11 +1361,13 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series1") to listOf(makeBook("book1", url = URL("file:/series1/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series1/book2")).copy(fileSize = 2)))
+      val scan2 = mapOf(makeSeries(name = "series2") to listOf(makeBook("book1", url = URL("file:/series2/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series2/book2")).copy(fileSize = 2)))
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series1") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-          mapOf(makeSeries(name = "series2") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       libraryContentLifecycle.scanRootFolder(library) // creation
 
       bookRepository.findAll().forEach { book ->
@@ -1379,11 +1409,13 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series1") to listOf(makeBook("book1", url = URL("file:/series1/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series1/book2")).copy(fileSize = 2)))
+      val scan2 = mapOf(makeSeries(name = "series2") to listOf(makeBook("book1", url = URL("file:/series2/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series2/book2")).copy(fileSize = 2)))
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series1") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-          mapOf(makeSeries(name = "series2") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       libraryContentLifecycle.scanRootFolder(library) // creation
 
       seriesRepository.findAll().first().let {
@@ -1427,11 +1459,13 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series1") to listOf(makeBook("book1", url = URL("file:/series1/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series1/book2")).copy(fileSize = 2)))
+      val scan2 = mapOf(makeSeries(name = "series2") to listOf(makeBook("book1", url = URL("file:/series2/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series2/book2")).copy(fileSize = 2)))
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series1") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-          mapOf(makeSeries(name = "series2") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       libraryContentLifecycle.scanRootFolder(library) // creation
 
       seriesRepository.findAll().first().let {
@@ -1475,11 +1509,13 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series1") to listOf(makeBook("book1", url = URL("file:/series1/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series1/book2")).copy(fileSize = 2)))
+      val scan2 = mapOf(makeSeries(name = "series2") to listOf(makeBook("book1", url = URL("file:/series2/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series2/book2")).copy(fileSize = 2)))
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series1") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-          mapOf(makeSeries(name = "series2") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       libraryContentLifecycle.scanRootFolder(library) // creation
 
       seriesRepository.findAll().first().let {
@@ -1524,11 +1560,13 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series1") to listOf(makeBook("book1", url = URL("file:/series1/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series1/book2")).copy(fileSize = 2)))
+      val scan2 = mapOf(makeSeries(name = "series2") to listOf(makeBook("book1", url = URL("file:/series2/book1")).copy(fileSize = 1), makeBook("book2", url = URL("file:/series2/book2")).copy(fileSize = 2)))
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series1") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-          mapOf(makeSeries(name = "series2") to listOf(makeBook("book1").copy(fileSize = 1), makeBook("book2").copy(fileSize = 2))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       libraryContentLifecycle.scanRootFolder(library) // creation
 
       bookRepository.findAll().forEach { book ->
@@ -1570,14 +1608,18 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
-      every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(
-            makeSeries(name = "series") to listOf(makeBook("book1"), makeBook("book3")),
-            makeSeries(name = "series2") to listOf(makeBook("book2")),
-          ).toScanResult(),
-          mapOf(makeSeries(name = "series") to listOf(makeBook("book1"))).toScanResult(),
+      val scan1 =
+        mapOf(
+          makeSeries(name = "series") to listOf(makeBook("book1", url = URL("file:/series/book1")), makeBook("book3", url = URL("file:/series/book3"))),
+          makeSeries(name = "series2") to listOf(makeBook("book2", url = URL("file:/series2/book2"))),
         )
+      val scan2 = mapOf(makeSeries(name = "series") to listOf(makeBook("book1", url = URL("file:/series/book1"))))
+
+      every { mockScanner.scanRootFolder(any()) }
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       repeat(2) { libraryContentLifecycle.scanRootFolder(library) }
 
       // when
@@ -1602,11 +1644,14 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series") to listOf(makeBook("book1"), makeBook("book2"), makeBook("book3")))
+      val scan2 = mapOf(makeSeries(name = "series") to listOf(makeBook("book2"), makeBook("book3")))
+
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series") to listOf(makeBook("book1"), makeBook("book2"), makeBook("book3"))).toScanResult(),
-          mapOf(makeSeries(name = "series") to listOf(makeBook("book2"), makeBook("book3"))).toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       repeat(2) { libraryContentLifecycle.scanRootFolder(library) }
 
       // when
@@ -1633,11 +1678,14 @@ class LibraryContentLifecycleTest(
       val library = makeLibrary()
       libraryRepository.insert(library)
 
+      val scan1 = mapOf(makeSeries(name = "series") to listOf(makeBook("book1"), makeBook("book2"), makeBook("book3")))
+      val scan2 = emptyMap<Series, List<Book>>()
+
       every { mockScanner.scanRootFolder(any()) }
-        .returnsMany(
-          mapOf(makeSeries(name = "series") to listOf(makeBook("book1"), makeBook("book2"), makeBook("book3"))).toScanResult(),
-          emptyMap<Series, List<Book>>().toScanResult(),
-        )
+        .returnsMany(scan1.toScanResult(), scan2.toScanResult())
+      val hashCaches = toHashCache(scan1, scan2)
+      every { mockHashCacheLoader.load(any()) }.returnsMany(hashCaches[0], hashCaches[1])
+
       repeat(2) { libraryContentLifecycle.scanRootFolder(library) }
 
       collectionRepository.insert(SeriesCollection("collection", seriesIds = seriesRepository.findAllIdsByLibraryId(library.id).toList()))

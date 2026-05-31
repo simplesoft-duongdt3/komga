@@ -44,7 +44,7 @@ class LibraryLifecycle(
     checkLibraryValidity(library, existing)
 
     libraryRepository.insert(library)
-    taskEmitter.scanLibrary(library.id)
+    taskEmitter.hashLibrary(library.id)
 
     eventPublisher.publishEvent(DomainEvent.LibraryAdded(library))
 
@@ -65,7 +65,7 @@ class LibraryLifecycle(
       libraryScanScheduler.scheduleScan(toUpdate)
 
     if (checkLibraryShouldRescan(current, toUpdate))
-      taskEmitter.scanLibrary(toUpdate.id)
+      taskEmitter.hashLibrary(toUpdate.id)
 
     if (toUpdate.hashFiles && !current.hashFiles)
       taskEmitter.hashBooksWithoutHash(toUpdate)

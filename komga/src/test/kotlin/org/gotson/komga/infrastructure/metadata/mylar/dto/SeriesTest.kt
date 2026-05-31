@@ -186,9 +186,10 @@ class SeriesTest(
         }
       }
       """.trimIndent()
-    val thrown = catchThrowable { mapper.readValue<Series>(json) }
+    val deserialized = mapper.readValue<Series>(json)
 
-    assertThat(thrown).isInstanceOf(MismatchedInputException::class.java)
+    assertThat(deserialized.metadata).isNotNull
+    assertThat(deserialized.metadata.year).isNull()
   }
 
   @Test
@@ -217,9 +218,10 @@ class SeriesTest(
         }
       }
       """.trimIndent()
-    val thrown = catchThrowable { mapper.readValue<Series>(json) }
+    val deserialized = mapper.readValue<Series>(json)
 
-    assertThat(thrown).isInstanceOf(MismatchedInputException::class.java)
+    assertThat(deserialized.metadata).isNotNull
+    assertThat(deserialized.metadata.publisher).isNull()
   }
 
   @Test
@@ -249,8 +251,9 @@ class SeriesTest(
       }
 
       """.trimIndent()
-    val thrown = catchThrowable { mapper.readValue<Series>(json) }
+    val deserialized = mapper.readValue<Series>(json)
 
-    assertThat(thrown).isInstanceOf(MismatchedInputException::class.java)
+    assertThat(deserialized.metadata).isNotNull
+    assertThat(deserialized.metadata.status).isNull()
   }
 }

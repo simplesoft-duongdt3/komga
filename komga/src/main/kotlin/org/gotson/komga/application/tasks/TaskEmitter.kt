@@ -42,6 +42,13 @@ class TaskEmitter(
     submitTask(Task.EmptyTrash(libraryId, priority))
   }
 
+  fun hashLibrary(
+    libraryId: String,
+    priority: Int = DEFAULT_PRIORITY,
+  ) {
+    submitTask(Task.HashLibrary(libraryId, priority))
+  }
+
   fun analyzeUnknownAndOutdatedBooks(library: Library) {
     bookRepository
       .findAll(

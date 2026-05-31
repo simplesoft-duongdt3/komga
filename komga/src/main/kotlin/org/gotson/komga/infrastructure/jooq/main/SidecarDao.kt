@@ -1,5 +1,6 @@
 package org.gotson.komga.infrastructure.jooq.main
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.Sidecar
 import org.gotson.komga.domain.model.SidecarStored
 import org.gotson.komga.domain.persistence.SidecarRepository
@@ -13,7 +14,10 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
+import java.net.MalformedURLException
 import java.net.URL
+
+private val logger = KotlinLogging.logger {}
 
 @Component
 class SidecarDao(
@@ -24,7 +28,7 @@ class SidecarDao(
   SidecarRepository {
   private val sc = Tables.SIDECAR
 
-  override fun findAll(): Collection<SidecarStored> = dslRO.selectFrom(sc).fetch().map { it.toDomain() }
+  override fun findAll(): Collection<SidecarStored> = dslRO.selectFrom(sc).fetch().mapNotNull { it.toDomain() }
 
   override fun save(
     libraryId: String,
@@ -72,11 +76,16 @@ class SidecarDao(
       .groupBy(sc.LIBRARY_ID)
       .fetchMap(sc.LIBRARY_ID, DSL.count(sc.URL))
 
-  private fun SidecarRecord.toDomain() =
-    SidecarStored(
-      url = URL(url),
-      parentUrl = URL(parentUrl),
-      lastModifiedTime = lastModifiedTime,
-      libraryId = libraryId,
-    )
+  private fun SidecarRecord.toDomain(): SidecarStored? =
+    try {
+      SidecarStored(
+        url = URL(url),
+        parentUrl = URL(parentUrl),
+        lastModifiedTime = lastModifiedTime,
+        libraryId = libraryId,
+      )
+    } catch (e: MalformedURLException) {
+      logger.warn { "Invalid sidecar URL: $url, skipping" }
+      null
+    }
 }

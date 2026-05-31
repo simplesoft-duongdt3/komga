@@ -54,10 +54,19 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN ./gradlew :komga:bootJar -x test -x generateGitProperties -x prepareThymeLeaf
 
 
-# Stage 3: Runtime
-FROM eclipse-temurin:21-jre-alpine
+# Stage 3: Rust builder
+FROM rust:1.85-slim AS rust-builder
+WORKDIR /build
+COPY scan-library-tool/pdf-hasher/ .
+RUN apt-get update && apt-get install -y pkg-config && \
+    rm -rf /var/lib/apt/lists/* && cargo build --release
+
+# Stage 4: Runtime
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
+
+COPY --from=rust-builder /build/target/release/pdf-hasher /usr/local/bin/
 
 # Copy built artifact from backend-builder stage
 COPY --from=backend-builder /app/komga/build/libs/komga-*.jar komga.jar

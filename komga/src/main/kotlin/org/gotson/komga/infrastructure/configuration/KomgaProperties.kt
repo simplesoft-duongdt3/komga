@@ -47,6 +47,9 @@ class KomgaProperties {
 
   var configDir: String? = null
 
+  @Positive
+  var hasherThreads: Int = 4
+
   var kobo = Kobo()
 
   val fonts = Fonts()

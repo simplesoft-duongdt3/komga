@@ -41,7 +41,7 @@ class LibraryScanScheduler(
           FixedRateTask(
             {
               logger.info { "Periodic scan for library: ${library.name}" }
-              taskEmitter.scanLibrary(library.id)
+              taskEmitter.hashLibrary(library.id)
             },
             library.scanInterval.toDuration(),
             library.scanInterval.toDuration(),

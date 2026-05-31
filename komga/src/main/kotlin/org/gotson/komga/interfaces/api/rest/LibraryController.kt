@@ -232,7 +232,7 @@ class LibraryController(
     @RequestParam(required = false) deep: Boolean = false,
   ) {
     libraryRepository.findByIdOrNull(libraryId)?.let { library ->
-      taskEmitter.scanLibrary(library.id, deep, HIGHEST_PRIORITY)
+      taskEmitter.hashLibrary(library.id, HIGHEST_PRIORITY)
     } ?: throw ResponseStatusException(HttpStatus.NOT_FOUND)
   }
 

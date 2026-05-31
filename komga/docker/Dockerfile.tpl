@@ -4,6 +4,13 @@ WORKDIR /builder
 COPY assembly/${JAR} application.jar
 RUN java -Djarmode=tools -jar application.jar extract --layers --destination extracted
 
+# Rust build stage
+FROM rust:1.85-slim AS rust-builder
+WORKDIR /build
+COPY scan-library-tool/pdf-hasher/ .
+RUN apt-get update && apt-get install -y pkg-config && \
+    rm -rf /var/lib/apt/lists/* && cargo build --release
+
 # amd64 builder
 FROM ubuntu:24.10 AS build-amd64
 ENV JAVA_HOME=/opt/java/openjdk
@@ -45,6 +52,7 @@ RUN apt -y update && \
 FROM build-${TARGETARCH} AS runner
 VOLUME /config
 WORKDIR /app
+COPY --from=rust-builder /build/target/release/pdf-hasher /usr/local/bin/
 COPY --from=builder /builder/extracted/dependencies/ ./
 COPY --from=builder /builder/extracted/spring-boot-loader/ ./
 COPY --from=builder /builder/extracted/snapshot-dependencies/ ./

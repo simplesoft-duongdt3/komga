@@ -24,7 +24,7 @@ data class ScanRootFolderMetrics(
   var changedSidecars: Int = 0,
   var deletedSidecars: Int = 0,
 
-  // Fan-out counters (Phase 2) — populated by TaskHandler
+  // Fan-out counters — populated by TaskHandler
   var analyzeBookCount: Int = 0,
   var hashBookCount: Int = 0,
   var hashBookKoreaderCount: Int = 0,
@@ -41,4 +41,9 @@ data class ScanRootFolderMetrics(
   var cleanupSidecarsMs: Long = 0,
   var cleanupMs: Long = 0,
   var totalMs: Long = 0,
+
+  // Cache-based scan metrics
+  var cacheHits: Int = 0,
+  var cacheMisses: Int = 0,
+  var cacheLoadMs: Long = 0,
 )

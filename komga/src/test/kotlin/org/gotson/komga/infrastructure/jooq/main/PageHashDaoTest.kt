@@ -11,6 +11,8 @@ import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
 import org.gotson.komga.infrastructure.jooq.offset
+import org.gotson.komga.jooq.main.Tables
+import org.jooq.DSLContext
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
@@ -19,15 +21,18 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.data.domain.Pageable
+import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 @SpringBootTest
+@Transactional
 class PageHashDaoTest(
   @Autowired private val pageHashDao: PageHashDao,
   @Autowired private val mediaDao: MediaDao,
   @Autowired private val bookRepository: BookRepository,
   @Autowired private val seriesRepository: SeriesRepository,
   @Autowired private val libraryRepository: LibraryRepository,
+  @Autowired private val dsl: DSLContext,
 ) {
   private val library = makeLibrary()
   private val series = makeSeries("Series", libraryId = library.id)
@@ -49,6 +54,7 @@ class PageHashDaoTest(
     bookRepository.findAll().forEach {
       mediaDao.delete(it.id)
     }
+    dsl.delete(Tables.PAGE_HASH).execute()
   }
 
   @AfterAll

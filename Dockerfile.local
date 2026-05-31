@@ -27,10 +27,19 @@ COPY komga-webui ./komga-webui
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN ./gradlew :komga:prepareThymeLeaf :komga:bootJar -x test -x generateGitProperties
 
+# Rust build stage
+FROM rust:1.85-slim AS rust-builder
+WORKDIR /build
+COPY scan-library-tool/pdf-hasher/ .
+RUN apt-get update && apt-get install -y pkg-config && \
+    rm -rf /var/lib/apt/lists/* && cargo build --release
+
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
+
+COPY --from=rust-builder /build/target/release/pdf-hasher /usr/local/bin/
 
 # Copy built artifact from build stage
 COPY --from=build /app/komga/build/libs/komga-*.jar komga.jar
